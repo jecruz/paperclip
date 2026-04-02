@@ -1,3 +1,4 @@
+import pako from "pako";
 import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
 
 const textEncoder = new TextEncoder();
@@ -13,11 +14,7 @@ for (let i = 0; i < 256; i++) {
 }
 
 function normalizeArchivePath(pathValue: string) {
-  return pathValue
-    .replace(/\\/g, "/")
-    .split("/")
-    .filter(Boolean)
-    .join("/");
+  return pathValue.replace(/\\/g, "/").split("/").filter(Boolean).join("/");
 }
 
 function crc32(bytes: Uint8Array) {
@@ -46,11 +43,12 @@ function readUint16(source: Uint8Array, offset: number) {
 
 function readUint32(source: Uint8Array, offset: number) {
   return (
-    source[offset]! |
-    (source[offset + 1]! << 8) |
-    (source[offset + 2]! << 16) |
-    (source[offset + 3]! << 24)
-  ) >>> 0;
+    (source[offset]! |
+      (source[offset + 1]! << 8) |
+      (source[offset + 2]! << 16) |
+      (source[offset + 3]! << 24)) >>>
+    0
+  );
 }
 
 function getDosDateTime(date: Date) {
@@ -85,7 +83,9 @@ function sharedArchiveRoot(paths: string[]) {
     .filter((parts) => parts.length > 0);
   if (firstSegments.length === 0) return null;
   const candidate = firstSegments[0]![0]!;
-  return firstSegments.every((parts) => parts.length > 1 && parts[0] === candidate)
+  return firstSegments.every(
+    (parts) => parts.length > 1 && parts[0] === candidate,
+  )
     ? candidate
     : null;
 }
@@ -103,7 +103,11 @@ function inferBinaryContentType(pathValue: string) {
   const normalized = normalizeArchivePath(pathValue);
   const extensionIndex = normalized.lastIndexOf(".");
   if (extensionIndex === -1) return null;
-  return binaryContentTypeByExtension[normalized.slice(extensionIndex).toLowerCase()] ?? null;
+  return (
+    binaryContentTypeByExtension[
+      normalized.slice(extensionIndex).toLowerCase()
+    ] ?? null
+  );
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -121,7 +125,10 @@ function base64ToBytes(base64: string) {
   return bytes;
 }
 
-function bytesToPortableFileEntry(pathValue: string, bytes: Uint8Array): CompanyPortabilityFileEntry {
+function bytesToPortableFileEntry(
+  pathValue: string,
+  bytes: Uint8Array,
+): CompanyPortabilityFileEntry {
   const contentType = inferBinaryContentType(pathValue);
   if (!contentType) return textDecoder.decode(bytes);
   return {
@@ -131,38 +138,66 @@ function bytesToPortableFileEntry(pathValue: string, bytes: Uint8Array): Company
   };
 }
 
-function portableFileEntryToBytes(entry: CompanyPortabilityFileEntry): Uint8Array {
+function portableFileEntryToBytes(
+  entry: CompanyPortabilityFileEntry,
+): Uint8Array {
   if (typeof entry === "string") return textEncoder.encode(entry);
   return base64ToBytes(entry.data);
 }
 
-async function inflateZipEntry(compressionMethod: number, bytes: Uint8Array) {
+function inflateZipEntry(
+  compressionMethod: number,
+  bytes: Uint8Array,
+): Uint8Array | null {
   if (compressionMethod === 0) return bytes;
   if (compressionMethod !== 8) {
-    throw new Error("Unsupported zip archive: only STORE and DEFLATE entries are supported.");
+    throw new Error(
+      "Unsupported zip archive: only STORE and DEFLATE entries are supported.",
+    );
   }
-  if (typeof DecompressionStream !== "function") {
-    throw new Error("Unsupported zip archive: this browser cannot read compressed zip entries.");
+  try {
+    // Use pako inflateRaw for raw DEFLATE (ZIP format uses raw DEFLATE, not zlib-wrapped)
+    const result = pako.inflateRaw(bytes);
+    return new Uint8Array(result);
+  } catch {
+    // Decompression failed — return null so caller can skip with a warning
+    return null;
   }
-  const body = new Uint8Array(bytes.byteLength);
-  body.set(bytes);
-  const stream = new Blob([body]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export async function readZipArchive(source: ArrayBuffer | Uint8Array): Promise<{
+export async function readZipArchive(
+  source: ArrayBuffer | Uint8Array,
+): Promise<{
   rootPath: string | null;
   files: Record<string, CompanyPortabilityFileEntry>;
+  warnings: string[];
 }> {
   const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
-  const entries: Array<{ path: string; body: CompanyPortabilityFileEntry }> = [];
+  const entries: Array<{ path: string; body: CompanyPortabilityFileEntry }> =
+    [];
+  const warnings: string[] = [];
+  let totalEntries = 0;
+  let skippedEmptyEntries = 0;
   let offset = 0;
 
   while (offset + 4 <= bytes.length) {
     const signature = readUint32(bytes, offset);
     if (signature === 0x02014b50 || signature === 0x06054b50) break;
     if (signature !== 0x04034b50) {
-      throw new Error("Invalid zip archive: unsupported local file header.");
+      // Unknown entry type (e.g. encrypted/strong encryption) — skip it.
+      // Try to extract name length to advance; fall back to scanning.
+      if (offset + 30 <= bytes.length) {
+        const nameLen = readUint16(bytes, offset + 26);
+        const extraLen = readUint16(bytes, offset + 28);
+        if (offset + 30 + nameLen + extraLen <= bytes.length) {
+          const compressedSize = readUint32(bytes, offset + 18);
+          offset += 30 + nameLen + extraLen + compressedSize;
+          continue;
+        }
+      }
+      // Cannot parse header — scan forward for next known signature
+      offset += 1;
+      continue;
     }
 
     if (offset + 30 > bytes.length) {
@@ -175,10 +210,6 @@ export async function readZipArchive(source: ArrayBuffer | Uint8Array): Promise<
     const fileNameLength = readUint16(bytes, offset + 26);
     const extraFieldLength = readUint16(bytes, offset + 28);
 
-    if ((generalPurposeFlag & 0x0008) !== 0) {
-      throw new Error("Unsupported zip archive: data descriptors are not supported.");
-    }
-
     const nameOffset = offset + 30;
     const bodyOffset = nameOffset + fileNameLength + extraFieldLength;
     const bodyEnd = bodyOffset + compressedSize;
@@ -186,18 +217,65 @@ export async function readZipArchive(source: ArrayBuffer | Uint8Array): Promise<
       throw new Error("Invalid zip archive: truncated file contents.");
     }
 
-    const rawArchivePath = textDecoder.decode(bytes.slice(nameOffset, nameOffset + fileNameLength));
+    const rawArchivePath = textDecoder.decode(
+      bytes.slice(nameOffset, nameOffset + fileNameLength),
+    );
     const archivePath = normalizeArchivePath(rawArchivePath);
     const isDirectoryEntry = /\/$/.test(rawArchivePath.replace(/\\/g, "/"));
+
+    // Skip macOS resource fork files (._filename) and .DS_Store files
+    if (archivePath.startsWith("._") || archivePath.endsWith(".DS_Store")) {
+      offset = bodyEnd;
+      continue;
+    }
+
+    if ((generalPurposeFlag & 0x0008) !== 0) {
+      // Data descriptors present — skip this entry rather than failing the whole import.
+      // The size info for this entry is unreliable, so we cannot safely decompress it.
+      // If compressedSize is 0, there is no actual data or descriptor; skip the header itself.
+      totalEntries++;
+      if (compressedSize === 0) {
+        skippedEmptyEntries++;
+        offset = nameOffset + fileNameLength + extraFieldLength;
+      } else {
+        offset = bodyEnd;
+      }
+      continue;
+    }
     if (archivePath && !isDirectoryEntry) {
-      const entryBytes = await inflateZipEntry(compressionMethod, bytes.slice(bodyOffset, bodyEnd));
-      entries.push({
-        path: archivePath,
-        body: bytesToPortableFileEntry(archivePath, entryBytes),
-      });
+      totalEntries++;
+      const entryBytes = inflateZipEntry(
+        compressionMethod,
+        bytes.slice(bodyOffset, bodyEnd),
+      );
+      if (entryBytes === null) {
+        warnings.push(
+          `Failed to decompress "${archivePath}" — the entry was skipped. ` +
+            "This can happen with non-standard DEFLATE compression.",
+        );
+      } else {
+        entries.push({
+          path: archivePath,
+          body: bytesToPortableFileEntry(archivePath, entryBytes),
+        });
+      }
     }
 
     offset = bodyEnd;
+  }
+
+  // Detect empty archive: all entries had compressedSize=0 with data descriptors
+  // This commonly happens with macOS-created archives that have no actual content
+  if (
+    totalEntries > 0 &&
+    skippedEmptyEntries === totalEntries &&
+    entries.length === 0
+  ) {
+    warnings.push(
+      "The zip archive contains no parseable file content. " +
+        "This can happen when the archive was created on macOS without including actual files. " +
+        "Try re-zipping the files using: 'zip -r output.zip folder/' (instead of right-click > Compress).",
+    );
   }
 
   const rootPath = sharedArchiveRoot(entries.map((entry) => entry.path));
@@ -211,10 +289,13 @@ export async function readZipArchive(source: ArrayBuffer | Uint8Array): Promise<
     files[normalizedPath] = entry.body;
   }
 
-  return { rootPath, files };
+  return { rootPath, files, warnings };
 }
 
-export function createZipArchive(files: Record<string, CompanyPortabilityFileEntry>, rootPath: string): Uint8Array {
+export function createZipArchive(
+  files: Record<string, CompanyPortabilityFileEntry>,
+  rootPath: string,
+): Uint8Array {
   const normalizedRoot = normalizeArchivePath(rootPath);
   const localChunks: Uint8Array[] = [];
   const centralChunks: Uint8Array[] = [];
@@ -222,8 +303,12 @@ export function createZipArchive(files: Record<string, CompanyPortabilityFileEnt
   let localOffset = 0;
   let entryCount = 0;
 
-  for (const [relativePath, contents] of Object.entries(files).sort(([left], [right]) => left.localeCompare(right))) {
-    const archivePath = normalizeArchivePath(`${normalizedRoot}/${relativePath}`);
+  for (const [relativePath, contents] of Object.entries(files).sort(
+    ([left], [right]) => left.localeCompare(right),
+  )) {
+    const archivePath = normalizeArchivePath(
+      `${normalizedRoot}/${relativePath}`,
+    );
     const fileName = textEncoder.encode(archivePath);
     const body = portableFileEntryToBytes(contents);
     const checksum = crc32(body);
@@ -279,5 +364,9 @@ export function createZipArchive(files: Record<string, CompanyPortabilityFileEnt
   writeUint32(endOfCentralDirectory, 16, localOffset);
   writeUint16(endOfCentralDirectory, 20, 0);
 
-  return concatChunks([...localChunks, centralDirectory, endOfCentralDirectory]);
+  return concatChunks([
+    ...localChunks,
+    centralDirectory,
+    endOfCentralDirectory,
+  ]);
 }

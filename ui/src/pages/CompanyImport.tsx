@@ -31,6 +31,7 @@ import {
   Check,
   ChevronRight,
   Download,
+  FolderOpen,
   Github,
   Package,
   Upload,
@@ -372,7 +373,12 @@ function deriveSourcePrefix(
   importUrl: string,
   localPackageName: string | null,
   localRootPath: string | null,
+  localDirName: string | null,
 ): string | null {
+  if (sourceMode === "directory") {
+    if (localRootPath) return localRootPath.split("/").pop() ?? null;
+    return localDirName ?? null;
+  }
   if (sourceMode === "local") {
     if (localRootPath) return localRootPath.split("/").pop() ?? null;
     if (!localPackageName) return null;
@@ -731,6 +737,126 @@ async function readLocalPackageZip(file: File): Promise<{
   };
 }
 
+// Content type inference from file extension (matches zip.ts logic)
+const binaryContentTypeByExtension: Record<string, string> = {
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+};
+
+function inferContentType(pathValue: string): string | null {
+  const lastDot = pathValue.lastIndexOf(".");
+  if (lastDot === -1) return null;
+  return (
+    binaryContentTypeByExtension[pathValue.slice(lastDot).toLowerCase()] ?? null
+  );
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+async function readLocalDirectory(): Promise<{
+  name: string;
+  rootPath: string | null;
+  files: Record<string, CompanyPortabilityFileEntry>;
+  warnings: string[];
+}> {
+  const dirHandle = await window.showDirectoryPicker();
+  const files: Record<string, CompanyPortabilityFileEntry> = {};
+  const warnings: string[] = [];
+  const textDecoder = new TextDecoder();
+
+  async function* walkDir(
+    handle: FileSystemDirectoryHandle,
+    dirPath: string,
+  ): AsyncGenerator<{ path: string; file: File }> {
+    for await (const entry of handle.values()) {
+      if (entry.kind === "directory") {
+        // Skip macOS resource fork directories and .DS_Store
+        if (entry.name === "._" || entry.name === ".DS_Store") continue;
+        const subDir = await handle.getDirectoryHandle(entry.name);
+        yield* walkDir(subDir, `${dirPath}/${entry.name}`);
+      } else if (entry.kind === "file") {
+        // Skip macOS resource fork files and .DS_Store
+        if (entry.name.startsWith("._") || entry.name === ".DS_Store") continue;
+        const file = await entry.getFile();
+        yield { path: `${dirPath}/${entry.name}`, file };
+      }
+    }
+  }
+
+  const rootName = dirHandle.name;
+  let entryCount = 0;
+
+  for await (const { path, file } of walkDir(dirHandle, "")) {
+    // Normalize path: remove leading slash, convert backslashes
+    const normalizedPath = path
+      .replace(/^/, "")
+      .replace(/\\/g, "/")
+      .replace(/^\//, "");
+
+    try {
+      // Determine if binary based on content type or extension
+      const contentType = file.type || inferContentType(file.name);
+      const isBinary =
+        contentType &&
+        !contentType.startsWith("text/") &&
+        contentType !== "image/svg+xml";
+
+      if (isBinary) {
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        files[normalizedPath] = {
+          encoding: "base64",
+          data: bytesToBase64(bytes),
+          contentType: contentType || "application/octet-stream",
+        };
+      } else {
+        // Text file — read as string
+        const text = await file.text();
+        files[normalizedPath] = text;
+      }
+      entryCount++;
+    } catch (err) {
+      warnings.push(
+        `Failed to read "${normalizedPath}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  if (entryCount === 0 && warnings.length === 0) {
+    warnings.push("The selected directory contains no readable files.");
+  }
+
+  // Detect shared root: if all files share a common top-level directory, use it as rootPath
+  const segments = Object.keys(files)
+    .map((p) => p.split("/").filter(Boolean))
+    .filter((parts) => parts.length > 0);
+  let rootPath: string | null = null;
+  if (segments.length > 0) {
+    const firstSegments = segments[0]!;
+    const allShareRoot = segments.every(
+      (parts) => parts.length > 1 && parts[0] === firstSegments[0],
+    );
+    if (allShareRoot) {
+      rootPath = firstSegments[0];
+    }
+  }
+
+  return {
+    name: rootName,
+    rootPath,
+    files,
+    warnings,
+  };
+}
+
 // ── Main page ─────────────────────────────────────────────────────────
 
 export function CompanyImport() {
@@ -747,9 +873,17 @@ export function CompanyImport() {
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
 
   // Source state
-  const [sourceMode, setSourceMode] = useState<"github" | "local">("github");
+  const [sourceMode, setSourceMode] = useState<
+    "github" | "local" | "directory"
+  >("github");
   const [importUrl, setImportUrl] = useState("");
   const [localPackage, setLocalPackage] = useState<{
+    name: string;
+    rootPath: string | null;
+    files: Record<string, CompanyPortabilityFileEntry>;
+    warnings: string[];
+  } | null>(null);
+  const [localDir, setLocalDir] = useState<{
     name: string;
     rootPath: string | null;
     files: Record<string, CompanyPortabilityFileEntry>;
@@ -853,6 +987,14 @@ export function CompanyImport() {
   }, [setBreadcrumbs]);
 
   function buildSource(): CompanyPortabilitySource | null {
+    if (sourceMode === "directory") {
+      if (!localDir) return null;
+      return {
+        type: "inline",
+        rootPath: localDir.rootPath,
+        files: localDir.files,
+      };
+    }
     if (sourceMode === "local") {
       if (!localPackage) return null;
       return {
@@ -891,6 +1033,7 @@ export function CompanyImport() {
         importUrl,
         localPackage?.name ?? null,
         localPackage?.rootPath ?? null,
+        localDir?.name ?? null,
       );
       const defaultOverrides: Record<string, string> = {};
 
@@ -1051,12 +1194,42 @@ export function CompanyImport() {
         });
       }
       setLocalPackage(pkg);
+      setLocalDir(null);
       setImportPreview(null);
     } catch (err) {
       pushToast({
         tone: "error",
         title: "Package read failed",
         body: err instanceof Error ? err.message : "Failed to read folder.",
+      });
+    }
+  }
+
+  async function handleChooseLocalDirectory() {
+    try {
+      const dir = await readLocalDirectory();
+      if (dir.warnings.length > 0) {
+        pushToast({
+          tone: "warn",
+          title: "Directory read with warnings",
+          body: dir.warnings[0]!,
+        });
+      }
+      if (Object.keys(dir.files).length === 0) {
+        throw new Error(
+          dir.warnings[0] ??
+            "No readable files found in the selected directory.",
+        );
+      }
+      setLocalDir(dir);
+      setLocalPackage(null);
+      setImportPreview(null);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      pushToast({
+        tone: "error",
+        title: "Directory read failed",
+        body: err instanceof Error ? err.message : "Failed to read directory.",
       });
     }
   }
@@ -1261,7 +1434,11 @@ export function CompanyImport() {
   }
 
   const hasSource =
-    sourceMode === "local" ? !!localPackage : importUrl.trim().length > 0;
+    sourceMode === "local"
+      ? !!localPackage
+      : sourceMode === "directory"
+        ? !!localDir
+        : importUrl.trim().length > 0;
   const hasErrors = importPreview ? importPreview.errors.length > 0 : false;
 
   const previewContent =
@@ -1287,14 +1464,15 @@ export function CompanyImport() {
         <div>
           <h2 className="text-base font-semibold">Import source</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Choose a GitHub repo or upload a local Paperclip zip package.
+            Choose a GitHub repo, local directory, or zip package.
           </p>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="grid gap-2 md:grid-cols-3">
           {(
             [
               { key: "github", icon: Github, label: "GitHub repo" },
+              { key: "directory", icon: FolderOpen, label: "Local folder" },
               { key: "local", icon: Upload, label: "Local zip" },
             ] as const
           ).map(({ key, icon: Icon, label }) => (
@@ -1320,7 +1498,32 @@ export function CompanyImport() {
           ))}
         </div>
 
-        {sourceMode === "local" ? (
+        {sourceMode === "directory" ? (
+          <div className="rounded-md border border-dashed border-border px-3 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleChooseLocalDirectory}
+              >
+                Choose folder
+              </Button>
+              {localDir && (
+                <span className="text-xs text-muted-foreground">
+                  {localDir.name} with {Object.keys(localDir.files).length} file
+                  {Object.keys(localDir.files).length === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            {!localDir && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Select a local folder containing a Paperclip company package.
+                Uses the File System Access API to read files directly from your
+                computer — nothing is uploaded.
+              </p>
+            )}
+          </div>
+        ) : sourceMode === "local" ? (
           <div className="rounded-md border border-dashed border-border px-3 py-3">
             <input
               ref={packageInputRef}

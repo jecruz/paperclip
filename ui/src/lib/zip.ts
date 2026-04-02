@@ -178,22 +178,21 @@ export async function readZipArchive(
   while (offset + 4 <= bytes.length) {
     const signature = readUint32(bytes, offset);
     if (signature === 0x02014b50 || signature === 0x06054b50) break;
-    if (signature === 0x03074b50) {
-      // Encrypted entry — skip it (cannot decrypt without password)
-      const encryptedNameLength = readUint16(bytes, offset + 26);
-      const encryptedExtraLength = readUint16(bytes, offset + 28);
-      const encryptedCompressedSize = readUint32(bytes, offset + 18);
-      const encryptedBodyEnd =
-        offset +
-        30 +
-        encryptedNameLength +
-        encryptedExtraLength +
-        encryptedCompressedSize;
-      offset = encryptedBodyEnd;
-      continue;
-    }
     if (signature !== 0x04034b50) {
-      throw new Error("Invalid zip archive: unsupported local file header.");
+      // Unknown entry type (e.g. encrypted/strong encryption) — skip it.
+      // Try to extract name length to advance; fall back to scanning.
+      if (offset + 30 <= bytes.length) {
+        const nameLen = readUint16(bytes, offset + 26);
+        const extraLen = readUint16(bytes, offset + 28);
+        if (offset + 30 + nameLen + extraLen <= bytes.length) {
+          const compressedSize = readUint32(bytes, offset + 18);
+          offset += 30 + nameLen + extraLen + compressedSize;
+          continue;
+        }
+      }
+      // Cannot parse header — scan forward for next known signature
+      offset += 1;
+      continue;
     }
 
     if (offset + 30 > bytes.length) {

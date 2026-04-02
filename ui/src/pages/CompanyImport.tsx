@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  AdapterEnvironmentTestResult,
   CompanyPortabilityCollisionStrategy,
+  CompanyPortabilityDefaultAgentConfig,
   CompanyPortabilityFileEntry,
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
@@ -15,7 +17,10 @@ import { companiesApi } from "../api/companies";
 import { agentsApi } from "../api/agents";
 import { queryKeys } from "../lib/queryKeys";
 import { getAgentOrderStorageKey, writeAgentOrder } from "../lib/agent-order";
-import { getProjectOrderStorageKey, writeProjectOrder } from "../lib/project-order";
+import {
+  getProjectOrderStorageKey,
+  writeProjectOrder,
+} from "../lib/project-order";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
@@ -30,7 +35,11 @@ import {
   Package,
   Upload,
 } from "lucide-react";
-import { Field, adapterLabels } from "../components/agent-config-primitives";
+import {
+  Field,
+  CollapsibleSection,
+  adapterLabels,
+} from "../components/agent-config-primitives";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
 import type { CreateConfigValues } from "@paperclipai/adapter-utils";
@@ -45,12 +54,18 @@ import {
   PackageFileTree,
 } from "../components/PackageFileTree";
 import { readZipArchive } from "../lib/zip";
-import { getPortableFileDataUrl, getPortableFileText, isPortableImageFile } from "../lib/portable-files";
+import {
+  getPortableFileDataUrl,
+  getPortableFileText,
+  isPortableImageFile,
+} from "../lib/portable-files";
 
 // ── Import-specific helpers ───────────────────────────────────────────
 
 /** Build a map from file path → planned action (create/update/skip) using the manifest + plan */
-function buildActionMap(preview: CompanyPortabilityPreviewResult): Map<string, string> {
+function buildActionMap(
+  preview: CompanyPortabilityPreviewResult,
+): Map<string, string> {
   const map = new Map<string, string>();
   const manifest = preview.manifest;
 
@@ -92,7 +107,12 @@ function buildActionMap(preview: CompanyPortabilityPreviewResult): Map<string, s
   // Company file
   if (manifest.company) {
     const path = ensureMarkdownPath(manifest.company.path);
-    map.set(path, preview.plan.companyAction === "none" ? "skip" : preview.plan.companyAction);
+    map.set(
+      path,
+      preview.plan.companyAction === "none"
+        ? "skip"
+        : preview.plan.companyAction,
+    );
   }
 
   return map;
@@ -145,14 +165,20 @@ function FrontmatterCard({ data }: { data: FrontmatterData }) {
 
 // ── Import file tree customization ───────────────────────────────────
 
-function renderImportFileExtra(node: FileTreeNode, checked: boolean, renameMap: Map<string, string>) {
+function renderImportFileExtra(
+  node: FileTreeNode,
+  checked: boolean,
+  renameMap: Map<string, string>,
+) {
   // Show rename indicator only on directories (folders), not individual files
   const renamedTo = node.kind === "dir" ? renameMap.get(node.path) : undefined;
   const actionBadge = node.action ? (
-    <span className={cn(
-      "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
-      ACTION_COLORS[node.action] ?? ACTION_COLORS.skip,
-    )}>
+    <span
+      className={cn(
+        "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
+        ACTION_COLORS[node.action] ?? ACTION_COLORS.skip,
+      )}
+    >
       {checked ? node.action : "skip"}
     </span>
   ) : null;
@@ -162,7 +188,10 @@ function renderImportFileExtra(node: FileTreeNode, checked: boolean, renameMap: 
   return (
     <span className="inline-flex items-center gap-1.5 shrink-0">
       {renamedTo && checked && (
-        <span className="text-[10px] text-cyan-500 font-mono truncate max-w-[7rem]" title={renamedTo}>
+        <span
+          className="text-[10px] text-cyan-500 font-mono truncate max-w-[7rem]"
+          title={renamedTo}
+        >
           &rarr; {renamedTo}
         </span>
       )}
@@ -192,25 +221,38 @@ function ImportPreviewPane({
 }) {
   if (!selectedFile || content === null) {
     return (
-      <EmptyState icon={Package} message="Select a file to preview its contents." />
+      <EmptyState
+        icon={Package}
+        message="Select a file to preview its contents."
+      />
     );
   }
 
   const textContent = getPortableFileText(content);
   const isMarkdown = selectedFile.endsWith(".md") && textContent !== null;
-  const parsed = isMarkdown && textContent ? parseFrontmatter(textContent) : null;
-  const imageSrc = isPortableImageFile(selectedFile, content) ? getPortableFileDataUrl(selectedFile, content) : null;
-  const actionColor = action ? (ACTION_COLORS[action] ?? ACTION_COLORS.skip) : "";
+  const parsed =
+    isMarkdown && textContent ? parseFrontmatter(textContent) : null;
+  const imageSrc = isPortableImageFile(selectedFile, content)
+    ? getPortableFileDataUrl(selectedFile, content)
+    : null;
+  const actionColor = action
+    ? (ACTION_COLORS[action] ?? ACTION_COLORS.skip)
+    : "";
 
   // Resolve relative image paths within the import package
   const resolveImageSrc = isMarkdown
     ? (src: string) => {
         if (/^(?:https?:|data:)/i.test(src)) return null;
-        const dir = selectedFile.includes("/") ? selectedFile.slice(0, selectedFile.lastIndexOf("/") + 1) : "";
+        const dir = selectedFile.includes("/")
+          ? selectedFile.slice(0, selectedFile.lastIndexOf("/") + 1)
+          : "";
         const resolved = dir + src;
         const entry = allFiles[resolved] ?? allFiles[src];
         if (!entry) return null;
-        return getPortableFileDataUrl(resolved in allFiles ? resolved : src, entry);
+        return getPortableFileDataUrl(
+          resolved in allFiles ? resolved : src,
+          entry,
+        );
       }
     : undefined;
 
@@ -227,10 +269,12 @@ function ImportPreviewPane({
             )}
           </div>
           {action && (
-            <span className={cn(
-              "shrink-0 rounded-full border px-2 py-0.5 text-xs uppercase tracking-wide",
-              actionColor,
-            )}>
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2 py-0.5 text-xs uppercase tracking-wide",
+                actionColor,
+              )}
+            >
               {action}
             </span>
           )}
@@ -240,13 +284,23 @@ function ImportPreviewPane({
         {parsed ? (
           <>
             <FrontmatterCard data={parsed.data} />
-            {parsed.body.trim() && <MarkdownBody resolveImageSrc={resolveImageSrc}>{parsed.body}</MarkdownBody>}
+            {parsed.body.trim() && (
+              <MarkdownBody resolveImageSrc={resolveImageSrc}>
+                {parsed.body}
+              </MarkdownBody>
+            )}
           </>
         ) : isMarkdown ? (
-          <MarkdownBody resolveImageSrc={resolveImageSrc}>{textContent ?? ""}</MarkdownBody>
+          <MarkdownBody resolveImageSrc={resolveImageSrc}>
+            {textContent ?? ""}
+          </MarkdownBody>
         ) : imageSrc ? (
           <div className="flex min-h-[520px] items-center justify-center rounded-lg border border-border bg-accent/10 p-6">
-            <img src={imageSrc} alt={selectedFile} className="max-h-[480px] max-w-full object-contain" />
+            <img
+              src={imageSrc}
+              alt={selectedFile}
+              className="max-h-[480px] max-w-full object-contain"
+            />
           </div>
         ) : textContent !== null ? (
           <pre className="overflow-x-auto whitespace-pre-wrap break-words border-0 bg-transparent p-0 font-mono text-sm text-foreground">
@@ -328,7 +382,8 @@ function deriveSourcePrefix(
     const url = importUrl.trim();
     if (!url) return null;
     try {
-      const pathname = new URL(url.startsWith("http") ? url : `https://${url}`).pathname;
+      const pathname = new URL(url.startsWith("http") ? url : `https://${url}`)
+        .pathname;
       // For github URLs like /owner/repo/tree/branch/path - take last segment
       const segments = pathname.split("/").filter(Boolean);
       return segments.length > 0 ? segments[segments.length - 1] : null;
@@ -360,12 +415,18 @@ function applyImportedSidebarOrder(
 
   const agentIdBySlug = new Map(
     result.agents
-      .filter((agent): agent is { slug: string; id: string } => typeof agent.id === "string" && agent.id.length > 0)
+      .filter(
+        (agent): agent is { slug: string; id: string } =>
+          typeof agent.id === "string" && agent.id.length > 0,
+      )
       .map((agent) => [agent.slug, agent.id]),
   );
   const projectIdBySlug = new Map(
     result.projects
-      .filter((project): project is { slug: string; id: string } => typeof project.id === "string" && project.id.length > 0)
+      .filter(
+        (project): project is { slug: string; id: string } =>
+          typeof project.id === "string" && project.id.length > 0,
+      )
       .map((project) => [project.slug, project.id]),
   );
 
@@ -377,10 +438,16 @@ function applyImportedSidebarOrder(
     .filter((id): id is string => Boolean(id));
 
   if (orderedAgentIds.length > 0) {
-    writeAgentOrder(getAgentOrderStorageKey(result.company.id, userId), orderedAgentIds);
+    writeAgentOrder(
+      getAgentOrderStorageKey(result.company.id, userId),
+      orderedAgentIds,
+    );
   }
   if (orderedProjectIds.length > 0) {
-    writeProjectOrder(getProjectOrderStorageKey(result.company.id, userId), orderedProjectIds);
+    writeProjectOrder(
+      getProjectOrderStorageKey(result.company.id, userId),
+      orderedProjectIds,
+    );
   }
 }
 
@@ -409,9 +476,7 @@ function ConflictResolutionList({
     <div className="mx-5 mt-3">
       <div className="rounded-md border border-border">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-          <h3 className="text-sm font-medium">
-            Renames
-          </h3>
+          <h3 className="text-sm font-medium">Renames</h3>
           <span className="text-xs text-muted-foreground">
             {conflicts.length} item{conflicts.length === 1 ? "" : "s"}
           </span>
@@ -444,21 +509,27 @@ function ConflictResolutionList({
                   {isSkipped ? "skipped" : "skip"}
                 </button>
 
-                <span className={cn(
-                  "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
-                  isSkipped
-                    ? "text-muted-foreground border-border"
-                    : isConfirmed
-                      ? "text-emerald-500 border-emerald-500/30"
-                      : "text-amber-500 border-amber-500/30",
-                )}>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
+                    isSkipped
+                      ? "text-muted-foreground border-border"
+                      : isConfirmed
+                        ? "text-emerald-500 border-emerald-500/30"
+                        : "text-amber-500 border-amber-500/30",
+                  )}
+                >
                   {item.kind}
                 </span>
 
-                <span className={cn(
-                  "shrink-0 font-mono text-xs",
-                  isSkipped ? "text-muted-foreground line-through" : "text-muted-foreground",
-                )}>
+                <span
+                  className={cn(
+                    "shrink-0 font-mono text-xs",
+                    isSkipped
+                      ? "text-muted-foreground line-through"
+                      : "text-muted-foreground",
+                  )}
+                >
                   {item.originalName}
                 </span>
 
@@ -512,10 +583,11 @@ function ConflictResolutionList({
 
 // ── Adapter type options for import ───────────────────────────────────
 
-const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapters().map((adapter) => ({
-  value: adapter.type,
-  label: adapterLabels[adapter.type] ?? adapter.label,
-}));
+const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] =
+  listUIAdapters().map((adapter) => ({
+    value: adapter.type,
+    label: adapterLabels[adapter.type] ?? adapter.label,
+  }));
 
 // ── Adapter picker for imported agents ───────────────────────────────
 
@@ -555,17 +627,23 @@ function AdapterPickerList({
         </div>
         <div className="divide-y divide-border">
           {agents.map((agent) => {
-            const selectedType = adapterOverrides[agent.slug] ?? agent.adapterType;
+            const selectedType =
+              adapterOverrides[agent.slug] ?? agent.adapterType;
             const isExpanded = expandedSlugs.has(agent.slug);
-            const vals = configValues[agent.slug] ?? { ...defaultCreateValues, adapterType: selectedType };
+            const vals = configValues[agent.slug] ?? {
+              ...defaultCreateValues,
+              adapterType: selectedType,
+            };
 
             return (
               <div key={agent.slug}>
                 <div className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                  <span className={cn(
-                    "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
-                    "text-blue-500 border-blue-500/30",
-                  )}>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide",
+                      "text-blue-500 border-blue-500/30",
+                    )}
+                  >
                     agent
                   </span>
                   <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -575,7 +653,9 @@ function AdapterPickerList({
                   <select
                     className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1 text-xs outline-none focus:border-foreground"
                     value={selectedType}
-                    onChange={(e) => onChangeAdapter(agent.slug, e.target.value)}
+                    onChange={(e) =>
+                      onChangeAdapter(agent.slug, e.target.value)
+                    }
                   >
                     {IMPORT_ADAPTER_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -593,7 +673,12 @@ function AdapterPickerList({
                     )}
                     onClick={() => onToggleExpand(agent.slug)}
                   >
-                    <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 transition-transform",
+                        isExpanded && "rotate-90",
+                      )}
+                    />
                     configure adapter
                   </button>
                 </div>
@@ -644,11 +729,8 @@ async function readLocalPackageZip(file: File): Promise<{
 // ── Main page ─────────────────────────────────────────────────────────
 
 export function CompanyImport() {
-  const {
-    selectedCompanyId,
-    selectedCompany,
-    setSelectedCompanyId,
-  } = useCompany();
+  const { selectedCompanyId, selectedCompany, setSelectedCompanyId } =
+    useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
@@ -680,19 +762,74 @@ export function CompanyImport() {
   const [checkedFiles, setCheckedFiles] = useState<Set<string>>(new Set());
 
   // Conflict resolution state
-  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>({});
+  const [nameOverrides, setNameOverrides] = useState<Record<string, string>>(
+    {},
+  );
   const [skippedSlugs, setSkippedSlugs] = useState<Set<string>>(new Set());
   const [confirmedSlugs, setConfirmedSlugs] = useState<Set<string>>(new Set());
-  const [collisionStrategy, setCollisionStrategy] = useState<CompanyPortabilityCollisionStrategy>("rename");
+  const [collisionStrategy, setCollisionStrategy] =
+    useState<CompanyPortabilityCollisionStrategy>("rename");
 
   // Adapter override state
-  const [adapterOverrides, setAdapterOverrides] = useState<Record<string, string>>({});
-  const [adapterExpandedSlugs, setAdapterExpandedSlugs] = useState<Set<string>>(new Set());
-  const [adapterConfigValues, setAdapterConfigValues] = useState<Record<string, CreateConfigValues>>({});
+  const [adapterOverrides, setAdapterOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [adapterExpandedSlugs, setAdapterExpandedSlugs] = useState<Set<string>>(
+    new Set(),
+  );
+  const [adapterConfigValues, setAdapterConfigValues] = useState<
+    Record<string, CreateConfigValues>
+  >({});
+
+  // Global agent default config applied to all imported agents
+  const [defaultAgentConfig, setDefaultAgentConfig] =
+    useState<CompanyPortabilityDefaultAgentConfig>({
+      adapterType: "",
+      model: "",
+      command: "",
+      extraArgs: [],
+      maxTurnsPerRun: undefined,
+      heartbeatEnabled: undefined,
+      intervalSec: undefined,
+    });
+  const [globalDefaultsExpanded, setGlobalDefaultsExpanded] = useState(false);
+
+  // Test environment for global defaults
+  const [globalTestResult, setGlobalTestResult] =
+    useState<AdapterEnvironmentTestResult | null>(null);
+  const [globalTestError, setGlobalTestError] = useState<string | null>(null);
+
+  const globalTestEnvironment = useMutation({
+    mutationFn: async () => {
+      if (!selectedCompanyId) {
+        throw new Error("Select a company to test adapter environment");
+      }
+      const adapterType = defaultAgentConfig.adapterType || "claude_local";
+      const config: Record<string, unknown> = {};
+      if (defaultAgentConfig.model) config.model = defaultAgentConfig.model;
+      if (defaultAgentConfig.command)
+        config.command = defaultAgentConfig.command;
+      if (defaultAgentConfig.extraArgs?.length)
+        config.extraArgs = defaultAgentConfig.extraArgs;
+      return agentsApi.testEnvironment(selectedCompanyId, adapterType, {
+        adapterConfig: config,
+      });
+    },
+    onSuccess: (data) => {
+      setGlobalTestResult(data);
+      setGlobalTestError(null);
+    },
+    onError: (err: Error) => {
+      setGlobalTestError(err.message);
+      setGlobalTestResult(null);
+    },
+  });
 
   // Fetch current company agents to find CEO adapter type
   const { data: companyAgents } = useQuery({
-    queryKey: selectedCompanyId ? queryKeys.agents.list(selectedCompanyId) : ["agents", "none"],
+    queryKey: selectedCompanyId
+      ? queryKeys.agents.list(selectedCompanyId)
+      : ["agents", "none"],
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: Boolean(selectedCompanyId),
   });
@@ -706,16 +843,17 @@ export function CompanyImport() {
     "Upload a .zip exported directly from Paperclip. Re-zipped archives created by Finder, Explorer, or other zip tools may not import correctly.";
 
   useEffect(() => {
-    setBreadcrumbs([
-      { label: "Org Chart", href: "/org" },
-      { label: "Import" },
-    ]);
+    setBreadcrumbs([{ label: "Org Chart", href: "/org" }, { label: "Import" }]);
   }, [setBreadcrumbs]);
 
   function buildSource(): CompanyPortabilitySource | null {
     if (sourceMode === "local") {
       if (!localPackage) return null;
-      return { type: "inline", rootPath: localPackage.rootPath, files: localPackage.files };
+      return {
+        type: "inline",
+        rootPath: localPackage.rootPath,
+        files: localPackage.files,
+      };
     }
     const url = importUrl.trim();
     if (!url) return null;
@@ -771,7 +909,11 @@ export function CompanyImport() {
 
       // Check all files by default, then uncheck COMPANY.md for existing company
       const allFiles = new Set(Object.keys(result.files));
-      if (targetMode === "existing" && result.manifest.company && result.plan.companyAction === "update") {
+      if (
+        targetMode === "existing" &&
+        result.manifest.company &&
+        result.plan.companyAction === "update"
+      ) {
         const companyPath = ensureMarkdownPath(result.manifest.company.path);
         allFiles.delete(companyPath);
       }
@@ -842,22 +984,35 @@ export function CompanyImport() {
         nameOverrides: buildFinalNameOverrides(),
         selectedFiles: buildSelectedFiles(),
         adapterOverrides: buildFinalAdapterOverrides(),
+        defaultAgentConfig: {
+          adapterType: defaultAgentConfig.adapterType || undefined,
+          model: defaultAgentConfig.model || undefined,
+          command: defaultAgentConfig.command || undefined,
+          extraArgs: defaultAgentConfig.extraArgs?.length
+            ? defaultAgentConfig.extraArgs
+            : undefined,
+          maxTurnsPerRun: defaultAgentConfig.maxTurnsPerRun,
+          heartbeatEnabled: defaultAgentConfig.heartbeatEnabled,
+          intervalSec: defaultAgentConfig.intervalSec,
+        },
       });
     },
     onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.companies.all,
+      });
       const importedCompany = await companiesApi.get(result.company.id);
       const refreshedSession = currentUserId
         ? null
         : await queryClient.fetchQuery({
-          queryKey: queryKeys.auth.session,
-          queryFn: () => authApi.getSession(),
-        });
+            queryKey: queryKeys.auth.session,
+            queryFn: () => authApi.getSession(),
+          });
       const sidebarOrderUserId =
-        currentUserId
-        ?? refreshedSession?.user?.id
-        ?? refreshedSession?.session?.userId
-        ?? null;
+        currentUserId ??
+        refreshedSession?.user?.id ??
+        refreshedSession?.session?.userId ??
+        null;
       applyImportedSidebarOrder(importPreview, result, sidebarOrderUserId);
       setSelectedCompanyId(importedCompany.id);
       pushToast({
@@ -894,7 +1049,8 @@ export function CompanyImport() {
   }
 
   const actionMap = useMemo(
-    () => (importPreview ? buildActionMap(importPreview) : new Map<string, string>()),
+    () =>
+      importPreview ? buildActionMap(importPreview) : new Map<string, string>(),
     [importPreview],
   );
 
@@ -948,7 +1104,10 @@ export function CompanyImport() {
         if (next.has(path)) next.delete(path);
         else next.add(path);
       } else {
-        const findNode = (nodes: FileTreeNode[], target: string): FileTreeNode | null => {
+        const findNode = (
+          nodes: FileTreeNode[],
+          target: string,
+        ): FileTreeNode | null => {
           for (const n of nodes) {
             if (n.path === target) return n;
             const found = findNode(n.children, target);
@@ -1039,10 +1198,19 @@ export function CompanyImport() {
     });
   }
 
-  function handleAdapterConfigChange(slug: string, patch: Partial<CreateConfigValues>) {
+  function handleAdapterConfigChange(
+    slug: string,
+    patch: Partial<CreateConfigValues>,
+  ) {
     setAdapterConfigValues((prev) => ({
       ...prev,
-      [slug]: { ...(prev[slug] ?? { ...defaultCreateValues, adapterType: adapterOverrides[slug] ?? "claude_local" }), ...patch },
+      [slug]: {
+        ...(prev[slug] ?? {
+          ...defaultCreateValues,
+          adapterType: adapterOverrides[slug] ?? "claude_local",
+        }),
+        ...patch,
+      },
     }));
   }
 
@@ -1057,13 +1225,19 @@ export function CompanyImport() {
   }, [importPreview]);
 
   // Build final adapterOverrides for import request
-  function buildFinalAdapterOverrides(): Record<string, CompanyPortabilityAdapterOverride> | undefined {
+  function buildFinalAdapterOverrides():
+    | Record<string, CompanyPortabilityAdapterOverride>
+    | undefined {
     if (adapterAgents.length === 0) return undefined;
     const overrides: Record<string, CompanyPortabilityAdapterOverride> = {};
     for (const agent of adapterAgents) {
-      const selectedType = adapterOverrides[agent.slug] ?? agent.adapterType;
+      // Use selected adapter type, fallback to agent's manifest type, then to claude_local
+      const selectedType =
+        adapterOverrides[agent.slug] ?? agent.adapterType ?? "claude_local";
       const configVals = adapterConfigValues[agent.slug];
-      const override: CompanyPortabilityAdapterOverride = { adapterType: selectedType };
+      const override: CompanyPortabilityAdapterOverride = {
+        adapterType: selectedType,
+      };
       if (configVals) {
         const uiAdapter = getUIAdapter(selectedType);
         override.adapterConfig = uiAdapter.buildAdapterConfig(configVals);
@@ -1077,15 +1251,20 @@ export function CompanyImport() {
     sourceMode === "local" ? !!localPackage : importUrl.trim().length > 0;
   const hasErrors = importPreview ? importPreview.errors.length > 0 : false;
 
-  const previewContent = selectedFile && importPreview
-    ? (() => {
-        return importPreview.files[selectedFile] ?? null;
-      })()
+  const previewContent =
+    selectedFile && importPreview
+      ? (() => {
+          return importPreview.files[selectedFile] ?? null;
+        })()
+      : null;
+  const selectedAction = selectedFile
+    ? (actionMap.get(selectedFile) ?? null)
     : null;
-  const selectedAction = selectedFile ? (actionMap.get(selectedFile) ?? null) : null;
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Download} message="Select a company to import into." />;
+    return (
+      <EmptyState icon={Download} message="Select a company to import into." />
+    );
   }
 
   return (
@@ -1177,7 +1356,10 @@ export function CompanyImport() {
           </Field>
         )}
 
-        <Field label="Target" hint="Import into this company or create a new one.">
+        <Field
+          label="Target"
+          hint="Import into this company or create a new one."
+        >
           <select
             className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
             value={targetMode}
@@ -1216,7 +1398,9 @@ export function CompanyImport() {
             className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
             value={collisionStrategy}
             onChange={(e) => {
-              setCollisionStrategy(e.target.value as CompanyPortabilityCollisionStrategy);
+              setCollisionStrategy(
+                e.target.value as CompanyPortabilityCollisionStrategy,
+              );
               setImportPreview(null);
             }}
           >
@@ -1225,6 +1409,231 @@ export function CompanyImport() {
             <option value="replace">Replace existing</option>
           </select>
         </Field>
+
+        <CollapsibleSection
+          title="Global Agent Defaults"
+          open={globalDefaultsExpanded}
+          onToggle={() => setGlobalDefaultsExpanded((v) => !v)}
+        >
+          <p className="text-xs text-muted-foreground mb-3">
+            Apply default adapter type, model, command, and CLI args to all
+            imported agents. Per-agent adapter overrides take precedence.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-foreground">Adapter</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => globalTestEnvironment.mutate()}
+                  disabled={
+                    globalTestEnvironment.isPending || !selectedCompanyId
+                  }
+                >
+                  {globalTestEnvironment.isPending
+                    ? "Testing..."
+                    : "Test environment"}
+                </Button>
+              </div>
+              <div className="space-y-3">
+                <Field
+                  label="Agent Type"
+                  hint="Default adapter type for all imported agents."
+                >
+                  <select
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    value={defaultAgentConfig.adapterType}
+                    onChange={(e) =>
+                      setDefaultAgentConfig(
+                        (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                          ...prev,
+                          adapterType: e.target.value,
+                        }),
+                      )
+                    }
+                  >
+                    <option value="">Use manifest default</option>
+                    {IMPORT_ADAPTER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {globalTestError && (
+                  <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {globalTestError}
+                  </div>
+                )}
+                {globalTestResult && (
+                  <div
+                    className={`rounded-md border px-3 py-2 text-xs ${
+                      globalTestResult.status === "pass"
+                        ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
+                        : globalTestResult.status === "warn"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
+                    }`}
+                  >
+                    <div className="font-medium">
+                      {globalTestResult.status === "pass"
+                        ? "Environment check passed"
+                        : globalTestResult.status === "warn"
+                          ? "Environment check passed with warnings"
+                          : "Environment check failed"}
+                    </div>
+                    {globalTestResult.checks.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {globalTestResult.checks.map((check, idx) => (
+                          <div key={`${check.code}-${idx}`}>
+                            <span className="font-medium uppercase tracking-wide opacity-80">
+                              {check.level}
+                            </span>
+                            <span className="mx-1 opacity-60">·</span>
+                            <span>{check.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-foreground mb-2">
+                Permissions &amp; Configuration
+              </p>
+              <div className="space-y-3">
+                <Field
+                  label="Command"
+                  hint="Default CLI command for all agents (e.g. claude, codex)."
+                >
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    type="text"
+                    value={defaultAgentConfig.command}
+                    onChange={(e) =>
+                      setDefaultAgentConfig(
+                        (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                          ...prev,
+                          command: e.target.value,
+                        }),
+                      )
+                    }
+                    placeholder="claude"
+                  />
+                </Field>
+                <Field
+                  label="Model"
+                  hint="Default model for all agents (e.g. claude-opus-4-6, claude-sonnet-4-7)."
+                >
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    type="text"
+                    value={defaultAgentConfig.model}
+                    onChange={(e) =>
+                      setDefaultAgentConfig(
+                        (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                          ...prev,
+                          model: e.target.value,
+                        }),
+                      )
+                    }
+                    placeholder="claude-opus-4-6"
+                  />
+                </Field>
+                <Field
+                  label="Extra CLI Args"
+                  hint="Space-separated extra CLI arguments applied to all agents."
+                >
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    type="text"
+                    value={(defaultAgentConfig.extraArgs ?? []).join(" ")}
+                    onChange={(e) =>
+                      setDefaultAgentConfig(
+                        (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                          ...prev,
+                          extraArgs: e.target.value.split(" ").filter(Boolean),
+                        }),
+                      )
+                    }
+                    placeholder="--no-animation --quiet"
+                  />
+                </Field>
+                <Field
+                  label="Max Turns Per Run"
+                  hint="Maximum conversation turns per agent run (budget/safety cap)."
+                >
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    type="number"
+                    min={0}
+                    value={defaultAgentConfig.maxTurnsPerRun ?? ""}
+                    onChange={(e) =>
+                      setDefaultAgentConfig(
+                        (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                          ...prev,
+                          maxTurnsPerRun: e.target.value
+                            ? parseInt(e.target.value, 10)
+                            : undefined,
+                        }),
+                      )
+                    }
+                    placeholder="Unlimited"
+                  />
+                </Field>
+                <Field
+                  label="Heartbeat Enabled"
+                  hint="Enable heartbeat monitoring for all imported agents."
+                >
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border"
+                      checked={defaultAgentConfig.heartbeatEnabled ?? false}
+                      onChange={(e) =>
+                        setDefaultAgentConfig(
+                          (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                            ...prev,
+                            heartbeatEnabled: e.target.checked || undefined,
+                          }),
+                        )
+                      }
+                    />
+                    <span className="text-sm">Enable heartbeat</span>
+                  </label>
+                </Field>
+                <Field
+                  label="Heartbeat Interval (seconds)"
+                  hint="Default interval between heartbeat pulses."
+                >
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+                    type="number"
+                    min={0}
+                    value={defaultAgentConfig.intervalSec ?? ""}
+                    onChange={(e) =>
+                      setDefaultAgentConfig(
+                        (prev: CompanyPortabilityDefaultAgentConfig) => ({
+                          ...prev,
+                          intervalSec: e.target.value
+                            ? parseInt(e.target.value, 10)
+                            : undefined,
+                        }),
+                      )
+                    }
+                    placeholder="300"
+                  />
+                </Field>
+              </div>
+            </div>
+          </div>
+        </CollapsibleSection>
 
         <div className="flex items-center gap-2">
           <Button
@@ -1244,11 +1653,10 @@ export function CompanyImport() {
           {/* Sticky import action bar */}
           <div className="sticky top-0 z-10 border-b border-border bg-background px-5 py-3">
             <div className="flex flex-wrap items-center gap-4 text-sm">
-              <span className="font-medium">
-                Import preview
-              </span>
+              <span className="font-medium">Import preview</span>
               <span className="text-muted-foreground">
-                {selectedCount} / {totalFiles} file{totalFiles === 1 ? "" : "s"} selected
+                {selectedCount} / {totalFiles} file{totalFiles === 1 ? "" : "s"}{" "}
+                selected
               </span>
               {conflicts.length > 0 && (
                 <span className="text-amber-500">
@@ -1257,7 +1665,8 @@ export function CompanyImport() {
               )}
               {importPreview.errors.length > 0 && (
                 <span className="text-destructive">
-                  {importPreview.errors.length} error{importPreview.errors.length === 1 ? "" : "s"}
+                  {importPreview.errors.length} error
+                  {importPreview.errors.length === 1 ? "" : "s"}
                 </span>
               )}
             </div>
@@ -1290,7 +1699,9 @@ export function CompanyImport() {
             <Button
               size="sm"
               onClick={() => importMutation.mutate()}
-              disabled={importMutation.isPending || hasErrors || selectedCount === 0}
+              disabled={
+                importMutation.isPending || hasErrors || selectedCount === 0
+              }
             >
               <Download className="mr-1.5 h-3.5 w-3.5" />
               {importMutation.isPending
@@ -1303,7 +1714,9 @@ export function CompanyImport() {
           {importPreview.warnings.length > 0 && (
             <div className="mx-5 mt-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3">
               {importPreview.warnings.map((w) => (
-                <div key={w} className="text-xs text-amber-500">{w}</div>
+                <div key={w} className="text-xs text-amber-500">
+                  {w}
+                </div>
               ))}
             </div>
           )}
@@ -1312,7 +1725,9 @@ export function CompanyImport() {
           {importPreview.errors.length > 0 && (
             <div className="mx-5 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3">
               {importPreview.errors.map((e) => (
-                <div key={e} className="text-xs text-destructive">{e}</div>
+                <div key={e} className="text-xs text-destructive">
+                  {e}
+                </div>
               ))}
             </div>
           )}
@@ -1332,7 +1747,9 @@ export function CompanyImport() {
                   onToggleDir={handleToggleDir}
                   onSelectFile={setSelectedFile}
                   onToggleCheck={handleToggleCheck}
-                  renderFileExtra={(node, checked) => renderImportFileExtra(node, checked, renameMap)}
+                  renderFileExtra={(node, checked) =>
+                    renderImportFileExtra(node, checked, renameMap)
+                  }
                   fileRowClassName={importFileRowClassName}
                 />
               </div>
@@ -1343,7 +1760,9 @@ export function CompanyImport() {
                 content={previewContent}
                 allFiles={importPreview?.files ?? {}}
                 action={selectedAction}
-                renamedTo={selectedFile ? (renameMap.get(selectedFile) ?? null) : null}
+                renamedTo={
+                  selectedFile ? (renameMap.get(selectedFile) ?? null) : null
+                }
               />
             </div>
           </div>

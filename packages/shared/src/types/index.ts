@@ -1,5 +1,9 @@
 export type { Company } from "./company.js";
-export type { InstanceExperimentalSettings, InstanceGeneralSettings, InstanceSettings } from "./instance.js";
+export type {
+  InstanceExperimentalSettings,
+  InstanceGeneralSettings,
+  InstanceSettings,
+} from "./instance.js";
 export type {
   CompanySkillSourceType,
   CompanySkillTrustLevel,
@@ -47,7 +51,13 @@ export type {
   AdapterEnvironmentTestResult,
 } from "./agent.js";
 export type { AssetImage } from "./asset.js";
-export type { Project, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectWorkspace } from "./project.js";
+export type {
+  Project,
+  ProjectCodebase,
+  ProjectCodebaseOrigin,
+  ProjectGoalRef,
+  ProjectWorkspace,
+} from "./project.js";
 export type {
   ExecutionWorkspace,
   ExecutionWorkspaceConfig,
@@ -126,8 +136,22 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject } from "./cost.js";
-export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
+export type {
+  CostEvent,
+  CostSummary,
+  CostByAgent,
+  CostByProviderModel,
+  CostByBiller,
+  CostByAgentModel,
+  CostWindowSpendRow,
+  CostByProject,
+} from "./cost.js";
+export type {
+  FinanceEvent,
+  FinanceSummary,
+  FinanceByBiller,
+  FinanceByKind,
+} from "./finance.js";
 export type {
   HeartbeatRun,
   HeartbeatRunEvent,
@@ -175,6 +199,7 @@ export type {
   CompanyPortabilityPreviewIssuePlan,
   CompanyPortabilityPreviewResult,
   CompanyPortabilityAdapterOverride,
+  CompanyPortabilityDefaultAgentConfig,
   CompanyPortabilityImportRequest,
   CompanyPortabilityImportResult,
   CompanyPortabilityExportRequest,

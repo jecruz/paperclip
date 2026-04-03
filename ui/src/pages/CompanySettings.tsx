@@ -14,7 +14,7 @@ import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import {
   Field,
   ToggleField,
-  HintIcon
+  HintIcon,
 } from "../components/agent-config-primitives";
 
 type AgentSnippetInput = {
@@ -23,14 +23,16 @@ type AgentSnippetInput = {
   testResolutionUrl?: string | null;
 };
 
-const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
+const FEEDBACK_TERMS_URL =
+  import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() ||
+  "https://paperclip.ing/tos";
 
 export function CompanySettings() {
   const {
     companies,
     selectedCompany,
     selectedCompanyId,
-    setSelectedCompanyId
+    setSelectedCompanyId,
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
@@ -70,17 +72,17 @@ export function CompanySettings() {
     }) => companiesApi.update(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-    }
+    },
   });
 
   const settingsMutation = useMutation({
     mutationFn: (requireApproval: boolean) =>
       companiesApi.update(selectedCompanyId!, {
-        requireBoardApprovalForNewAgents: requireApproval
+        requireBoardApprovalForNewAgents: requireApproval,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-    }
+    },
   });
 
   const feedbackSharingMutation = useMutation({
@@ -91,7 +93,9 @@ export function CompanySettings() {
     onSuccess: (_company, enabled) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       pushToast({
-        title: enabled ? "Feedback sharing enabled" : "Feedback sharing disabled",
+        title: enabled
+          ? "Feedback sharing enabled"
+          : "Feedback sharing disabled",
         tone: "success",
       });
     },
@@ -106,7 +110,9 @@ export function CompanySettings() {
 
   const inviteMutation = useMutation({
     mutationFn: () =>
-      accessApi.createOpenClawInvitePrompt(selectedCompanyId!),
+      accessApi.createCompanyInvite(selectedCompanyId!, {
+        allowedJoinTypes: "agent",
+      }),
     onSuccess: async (invite) => {
       setInviteError(null);
       const base = window.location.origin.replace(/\/+$/, "");
@@ -128,13 +134,13 @@ export function CompanySettings() {
             manifest.onboarding.connectivity?.connectionCandidates ?? null,
           testResolutionUrl:
             manifest.onboarding.connectivity?.testResolutionEndpoint?.url ??
-            null
+            null,
         });
       } catch {
         snippet = buildAgentSnippet({
           onboardingTextUrl: absoluteUrl,
           connectionCandidates: null,
-          testResolutionUrl: null
+          testResolutionUrl: null,
         });
       }
       setInviteSnippet(snippet);
@@ -147,14 +153,14 @@ export function CompanySettings() {
         /* clipboard may not be available */
       }
       queryClient.invalidateQueries({
-        queryKey: queryKeys.sidebarBadges(selectedCompanyId!)
+        queryKey: queryKeys.sidebarBadges(selectedCompanyId!),
       });
     },
     onError: (err) => {
       setInviteError(
-        err instanceof Error ? err.message : "Failed to create invite"
+        err instanceof Error ? err.message : "Failed to create invite",
       );
-    }
+    },
   });
 
   const syncLogoState = (nextLogoUrl: string | null) => {
@@ -164,21 +170,24 @@ export function CompanySettings() {
 
   const logoUploadMutation = useMutation({
     mutationFn: (file: File) =>
-      assetsApi
-        .uploadCompanyLogo(selectedCompanyId!, file)
-        .then((asset) => companiesApi.update(selectedCompanyId!, { logoAssetId: asset.assetId })),
+      assetsApi.uploadCompanyLogo(selectedCompanyId!, file).then((asset) =>
+        companiesApi.update(selectedCompanyId!, {
+          logoAssetId: asset.assetId,
+        }),
+      ),
     onSuccess: (company) => {
       syncLogoState(company.logoUrl);
       setLogoUploadError(null);
-    }
+    },
   });
 
   const clearLogoMutation = useMutation({
-    mutationFn: () => companiesApi.update(selectedCompanyId!, { logoAssetId: null }),
+    mutationFn: () =>
+      companiesApi.update(selectedCompanyId!, { logoAssetId: null }),
     onSuccess: (company) => {
       setLogoUploadError(null);
       syncLogoState(company.logoUrl);
-    }
+    },
   });
 
   function handleLogoFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -203,7 +212,7 @@ export function CompanySettings() {
   const archiveMutation = useMutation({
     mutationFn: ({
       companyId,
-      nextCompanyId
+      nextCompanyId,
     }: {
       companyId: string;
       nextCompanyId: string | null;
@@ -213,18 +222,18 @@ export function CompanySettings() {
         setSelectedCompanyId(nextCompanyId);
       }
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.companies.all
+        queryKey: queryKeys.companies.all,
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.companies.stats
+        queryKey: queryKeys.companies.stats,
       });
-    }
+    },
   });
 
   useEffect(() => {
     setBreadcrumbs([
       { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
-      { label: "Settings" }
+      { label: "Settings" },
     ]);
   }, [setBreadcrumbs, selectedCompany?.name]);
 
@@ -240,7 +249,7 @@ export function CompanySettings() {
     generalMutation.mutate({
       name: companyName.trim(),
       description: description.trim() || null,
-      brandColor: brandColor || null
+      brandColor: brandColor || null,
     });
   }
 
@@ -315,7 +324,9 @@ export function CompanySettings() {
                         onClick={handleClearLogo}
                         disabled={clearLogoMutation.isPending}
                       >
-                        {clearLogoMutation.isPending ? "Removing..." : "Remove logo"}
+                        {clearLogoMutation.isPending
+                          ? "Removing..."
+                          : "Remove logo"}
                       </Button>
                     </div>
                   )}
@@ -333,7 +344,9 @@ export function CompanySettings() {
                     </span>
                   )}
                   {logoUploadMutation.isPending && (
-                    <span className="text-xs text-muted-foreground">Uploading logo...</span>
+                    <span className="text-xs text-muted-foreground">
+                      Uploading logo...
+                    </span>
                   )}
                 </div>
               </Field>
@@ -393,8 +406,8 @@ export function CompanySettings() {
           {generalMutation.isError && (
             <span className="text-xs text-destructive">
               {generalMutation.error instanceof Error
-                  ? generalMutation.error.message
-                  : "Failed to save"}
+                ? generalMutation.error.message
+                : "Failed to save"}
             </span>
           )}
         </div>
@@ -428,15 +441,21 @@ export function CompanySettings() {
             onChange={(enabled) => feedbackSharingMutation.mutate(enabled)}
           />
           <p className="text-sm text-muted-foreground">
-            Votes are always saved locally. This setting controls whether voted AI outputs may also be marked for sharing with Paperclip Labs.
+            Votes are always saved locally. This setting controls whether voted
+            AI outputs may also be marked for sharing with Paperclip Labs.
           </p>
           <div className="space-y-1 text-xs text-muted-foreground">
             <div>
-              Terms version: {selectedCompany.feedbackDataSharingTermsVersion ?? DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION}
+              Terms version:{" "}
+              {selectedCompany.feedbackDataSharingTermsVersion ??
+                DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION}
             </div>
             {selectedCompany.feedbackDataSharingConsentAt ? (
               <div>
-                Enabled {new Date(selectedCompany.feedbackDataSharingConsentAt).toLocaleString()}
+                Enabled{" "}
+                {new Date(
+                  selectedCompany.feedbackDataSharingConsentAt,
+                ).toLocaleString()}
                 {selectedCompany.feedbackDataSharingConsentByUserId
                   ? ` by ${selectedCompany.feedbackDataSharingConsentByUserId}`
                   : ""}
@@ -466,9 +485,9 @@ export function CompanySettings() {
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">
-              Generate an OpenClaw agent invite snippet.
+              Generate an agent invite snippet.
             </span>
-            <HintIcon text="Creates a short-lived OpenClaw agent invite and renders a copy-ready prompt." />
+            <HintIcon text="Creates a short-lived agent invite and renders a copy-ready prompt." />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -479,7 +498,7 @@ export function CompanySettings() {
             >
               {inviteMutation.isPending
                 ? "Generating..."
-                : "Generate OpenClaw Invite Prompt"}
+                : "Generate Agent Invite Prompt"}
             </Button>
           </div>
           {inviteError && (
@@ -492,7 +511,7 @@ export function CompanySettings() {
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs text-muted-foreground">
-                  OpenClaw Invite Prompt
+                  Agent Invite Prompt
                 </div>
                 {snippetCopied && (
                   <span
@@ -544,7 +563,10 @@ export function CompanySettings() {
         <div className="rounded-md border border-border px-4 py-4">
           <p className="text-sm text-muted-foreground">
             Import and export have moved to dedicated pages accessible from the{" "}
-            <a href="/org" className="underline hover:text-foreground">Org Chart</a> header.
+            <a href="/org" className="underline hover:text-foreground">
+              Org Chart
+            </a>{" "}
+            header.
           </p>
           <div className="mt-3 flex items-center gap-2">
             <Button size="sm" variant="outline" asChild>
@@ -584,26 +606,26 @@ export function CompanySettings() {
               onClick={() => {
                 if (!selectedCompanyId) return;
                 const confirmed = window.confirm(
-                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`
+                  `Archive company "${selectedCompany.name}"? It will be hidden from the sidebar.`,
                 );
                 if (!confirmed) return;
                 const nextCompanyId =
                   companies.find(
                     (company) =>
                       company.id !== selectedCompanyId &&
-                      company.status !== "archived"
+                      company.status !== "archived",
                   )?.id ?? null;
                 archiveMutation.mutate({
                   companyId: selectedCompanyId,
-                  nextCompanyId
+                  nextCompanyId,
                 });
               }}
             >
               {archiveMutation.isPending
                 ? "Archiving..."
                 : selectedCompany.status === "archived"
-                ? "Already archived"
-                : "Archive company"}
+                  ? "Already archived"
+                  : "Archive company"}
             </Button>
             {archiveMutation.isError && (
               <span className="text-xs text-destructive">
@@ -725,7 +747,7 @@ function buildResolutionTestUrl(input: AgentSnippetInput): string | null {
     const onboardingUrl = new URL(input.onboardingTextUrl);
     const testPath = onboardingUrl.pathname.replace(
       /\/onboarding\.txt$/,
-      "/test-resolution"
+      "/test-resolution",
     );
     return `${onboardingUrl.origin}${testPath}`;
   } catch {

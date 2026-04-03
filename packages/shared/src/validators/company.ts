@@ -57,5 +57,3 @@ export type UpdateCompanyBranding = z.infer<typeof updateCompanyBrandingSchema>;
 export const companyResetRequestSchema = z.object({
   confirmCompanyName: z.string().min(1),
 });
-
-export type CompanyResetRequest = z.infer<typeof companyResetRequestSchema>;

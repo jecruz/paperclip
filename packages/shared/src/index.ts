@@ -140,6 +140,9 @@ export {
 
 export type {
   Company,
+  CompanyResetDeletedCounts,
+  CompanyResetRequest,
+  CompanyResetResult,
   FeedbackVote,
   FeedbackDataSharingPreference,
   FeedbackTargetType,

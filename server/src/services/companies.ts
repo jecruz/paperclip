@@ -288,6 +288,201 @@ export function companyService(db: Db) {
         return rows[0] ?? null;
       }),
 
+    reset: async (id: string, confirmName: string) => {
+      // Step 1: Verify company exists
+      const company = await getCompanyById(id);
+      if (!company) {
+        throw notFound("Company not found");
+      }
+
+      // Step 2: Verify name matches
+      if (confirmName !== company.name) {
+        throw unprocessable("Company name does not match");
+      }
+
+      // Step 3: Count records before deletion
+      const [
+        agentsCount,
+        projectsCount,
+        goalsCount,
+        issuesCount,
+        routinesCount,
+        skillsCount,
+        labelsCount,
+        budgetsCount,
+        secretsCount,
+      ] = await Promise.all([
+        db
+          .select({ count: count() })
+          .from(agents)
+          .where(and(eq(agents.companyId, id), ne(agents.role, "ceo")))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(projects)
+          .where(eq(projects.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(goals)
+          .where(eq(goals.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(issues)
+          .where(eq(issues.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(routines)
+          .where(eq(routines.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(companySkills)
+          .where(eq(companySkills.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(labels)
+          .where(eq(labels.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(budgetPolicies)
+          .where(eq(budgetPolicies.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: count() })
+          .from(companySecrets)
+          .where(eq(companySecrets.companyId, id))
+          .then((r) => r[0]?.count ?? 0),
+      ]);
+
+      const deletedCounts: CompanyResetDeletedCounts = {
+        agents: Number(agentsCount),
+        projects: Number(projectsCount),
+        goals: Number(goalsCount),
+        issues: Number(issuesCount),
+        routines: Number(routinesCount),
+        skills: Number(skillsCount),
+        labels: Number(labelsCount),
+        budgets: Number(budgetsCount),
+        secrets: Number(secretsCount),
+      };
+
+      // Step 4: Delete all org-scoped data in a single transaction
+      // PRESERVE: company, company_logos, board memberships (role = 'board')
+      await db.transaction(async (tx) => {
+        // Delete heartbeat_run_events
+        await tx
+          .delete(heartbeatRunEvents)
+          .where(eq(heartbeatRunEvents.companyId, id));
+        // Delete agent_task_sessions
+        await tx
+          .delete(agentTaskSessions)
+          .where(eq(agentTaskSessions.companyId, id));
+        // Delete heartbeat_runs
+        await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
+        // Delete agent_wakeup_requests
+        await tx
+          .delete(agentWakeupRequests)
+          .where(eq(agentWakeupRequests.companyId, id));
+        // Delete agent_api_keys
+        await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
+        // Delete agent_runtime_state
+        await tx
+          .delete(agentRuntimeState)
+          .where(eq(agentRuntimeState.companyId, id));
+        // Delete issue_comments
+        await tx.delete(issueComments).where(eq(issueComments.companyId, id));
+        // Delete cost_events
+        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        // Delete finance_events
+        await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
+        // Delete approval_comments
+        await tx
+          .delete(approvalComments)
+          .where(eq(approvalComments.companyId, id));
+        // Delete approvals
+        await tx.delete(approvals).where(eq(approvals.companyId, id));
+        // Delete company_secrets (cascade to company_secret_versions)
+        await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));
+        // Delete join_requests
+        await tx.delete(joinRequests).where(eq(joinRequests.companyId, id));
+        // Delete invites
+        await tx.delete(invites).where(eq(invites.companyId, id));
+        // Delete principal_permission_grants
+        await tx
+          .delete(principalPermissionGrants)
+          .where(eq(principalPermissionGrants.companyId, id));
+        // Delete issue_read_states (FK to issues, no cascade)
+        await tx
+          .delete(issueReadStates)
+          .where(eq(issueReadStates.companyId, id));
+        // Delete issues (cascade to issue_labels, issue_comments, issue_attachments, issue_documents, issue_work_products, issue_approvals)
+        await tx.delete(issues).where(eq(issues.companyId, id));
+        // Delete company_skills
+        await tx.delete(companySkills).where(eq(companySkills.companyId, id));
+        // Delete labels (cascade to issue_labels)
+        await tx.delete(labels).where(eq(labels.companyId, id));
+        // Delete projects (cascade to project_goals, routine_runs, execution_workspaces)
+        await tx.delete(projects).where(eq(projects.companyId, id));
+        // Delete goals (cascade to routines)
+        await tx.delete(goals).where(eq(goals.companyId, id));
+        // Delete routine_triggers (cascade to routine_runs via FK, routines via FK)
+        await tx
+          .delete(routineTriggers)
+          .where(eq(routineTriggers.companyId, id));
+        // Delete routines (cascade to routine_runs, routine_triggers)
+        await tx.delete(routines).where(eq(routines.companyId, id));
+        // Delete routine_runs (standalone since routines already deleted via cascade, but explicit for clarity)
+        await tx.delete(routineRuns).where(eq(routineRuns.companyId, id));
+        // Delete budget_policies (cascade to budget_incidents)
+        await tx.delete(budgetPolicies).where(eq(budgetPolicies.companyId, id));
+        // Delete budget_incidents
+        await tx
+          .delete(budgetIncidents)
+          .where(eq(budgetIncidents.companyId, id));
+        // Delete documents (cascade to document_revisions, issue_documents)
+        await tx.delete(documents).where(eq(documents.companyId, id));
+        // Delete document_revisions
+        await tx
+          .delete(documentRevisions)
+          .where(eq(documentRevisions.companyId, id));
+        // Delete feedback_votes (cascade to feedback_exports)
+        await tx.delete(feedbackVotes).where(eq(feedbackVotes.companyId, id));
+        // Delete feedback_exports
+        await tx
+          .delete(feedbackExports)
+          .where(eq(feedbackExports.companyId, id));
+        // Delete assets
+        await tx.delete(assets).where(eq(assets.companyId, id));
+        // Delete non-board company_memberships only
+        await tx
+          .delete(companyMemberships)
+          .where(
+            and(
+              eq(companyMemberships.companyId, id),
+              ne(companyMemberships.membershipRole, "board"),
+            ),
+          );
+        // Delete agents (preserve CEO)
+        await tx
+          .delete(agents)
+          .where(and(eq(agents.companyId, id), ne(agents.role, "ceo")));
+        // Delete activity_log
+        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
+      });
+
+      // Step 5: Return company (still exists) and deleted counts
+      // (Activity is logged by the route handler with richer actor context)
+      const updatedCompany = await getCompanyById(id);
+      return {
+        company: updatedCompany!,
+        deletedCounts,
+      };
+    },
     stats: () =>
       Promise.all([
         db

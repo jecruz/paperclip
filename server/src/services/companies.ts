@@ -27,6 +27,7 @@ import {
   principalPermissionGrants,
   companyMemberships,
   companySkills,
+  labels,
   routines,
   routineRuns,
   routineTriggers,

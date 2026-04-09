@@ -396,6 +396,8 @@ export function companyService(db: Db) {
         await tx
           .delete(agentTaskSessions)
           .where(eq(agentTaskSessions.companyId, id));
+        // Delete cost_events (before heartbeat_runs — cost_events has FK to heartbeat_runs)
+        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
         // Delete heartbeat_runs
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
         // Delete agent_wakeup_requests
@@ -410,8 +412,6 @@ export function companyService(db: Db) {
           .where(eq(agentRuntimeState.companyId, id));
         // Delete issue_comments
         await tx.delete(issueComments).where(eq(issueComments.companyId, id));
-        // Delete cost_events
-        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
         // Delete finance_events
         await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
         // Delete approval_comments

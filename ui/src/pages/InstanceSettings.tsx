@@ -57,38 +57,41 @@ export function InstanceSettings() {
 
       // Cascade to all agents in this org
       const orgAgents = agents.filter(a => a.companyId === companyId);
-      const toUpdate = enabled
-        ? orgAgents.filter(a => !a.heartbeatEnabled)
-        : orgAgents.filter(a => a.heartbeatEnabled);
+      await Promise.all(
+        orgAgents.map(async (agentRow) => {
+          const agent = await agentsApi.get(agentRow.id, agentRow.companyId);
+          const runtimeConfig = asRecord(agent.runtimeConfig) ?? {};
+          const heartbeat = asRecord(runtimeConfig.heartbeat) ?? {};
 
-      if (toUpdate.length > 0) {
-        await Promise.all(
-          toUpdate.map(async (agentRow) => {
-            const agent = await agentsApi.get(agentRow.id, agentRow.companyId);
-            const runtimeConfig = asRecord(agent.runtimeConfig) ?? {};
-            const heartbeat = asRecord(runtimeConfig.heartbeat) ?? {};
-            return agentsApi.update(
-              agentRow.id,
-              { runtimeConfig: { ...runtimeConfig, heartbeat: { ...heartbeat, enabled } } },
-              agentRow.companyId,
-            );
-          }),
-        );
-      }
+          // When enabling: set enabled=true and apply a default interval if none is set
+          // When disabling: just set enabled=false (keep interval config)
+          const nextHeartbeat: Record<string, unknown> = { ...heartbeat, enabled };
+          if (enabled && (heartbeat.intervalSec == null || Number(heartbeat.intervalSec) <= 0)) {
+            nextHeartbeat.intervalSec = 3600; // default 1 hour if not configured
+          }
+
+          return agentsApi.update(
+            agentRow.id,
+            { runtimeConfig: { ...runtimeConfig, heartbeat: nextHeartbeat } },
+            agentRow.companyId,
+          );
+        }),
+      );
     },
     onMutate: async ({ companyId, enabled }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.instance.schedulerHeartbeats });
       await queryClient.cancelQueries({ queryKey: queryKeys.companies.all });
       const previousHeartbeats = queryClient.getQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats);
       const previousCompanies = queryClient.getQueryData<unknown[]>(queryKeys.companies.all);
-      // Optimistically flip org-level flag and cascade heartbeatEnabled on all org agents
+      // Optimistically flip org-level flag and cascade heartbeatEnabled + intervalSec on all org agents
       queryClient.setQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats, (old = []) =>
         (old as InstanceSchedulerHeartbeatAgent[]).map(a =>
           a.companyId !== companyId ? a : {
             ...a,
             companyHeartbeatsEnabled: enabled,
             heartbeatEnabled: enabled,
-            schedulerActive: enabled && a.status !== "paused" && a.status !== "terminated" && a.status !== "pending_approval" && a.intervalSec > 0,
+            intervalSec: enabled && a.intervalSec <= 0 ? 3600 : a.intervalSec,
+            schedulerActive: enabled && a.status !== "paused" && a.status !== "terminated" && a.status !== "pending_approval" && (enabled ? 3600 : a.intervalSec) > 0,
           },
         ),
       );

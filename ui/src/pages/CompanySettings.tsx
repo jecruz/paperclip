@@ -238,12 +238,19 @@ export function CompanySettings() {
     onSuccess: async () => {
       setResetShowConfirm(false);
       setResetConfirmName("");
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.companies.all,
-      });
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.companies.stats,
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.companies.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.companies.detail(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.routines.list(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.list(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.budgets.overview(selectedCompanyId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId!) }),
+      ]);
       pushToast({
         title: "Company org reset complete",
         body: "All agents, projects, issues, and other org data has been removed.",

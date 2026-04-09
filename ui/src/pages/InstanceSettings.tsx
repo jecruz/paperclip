@@ -52,6 +52,20 @@ export function InstanceSettings() {
 
   const toggleOrgHeartbeatsMutation = useMutation({
     mutationFn: async ({ companyId }: { companyId: string }) => {
+      // Cascade disable to all agents in this org
+      const orgAgents = agents.filter(a => a.companyId === companyId);
+      await Promise.all(
+        orgAgents.map(async (agentRow) => {
+          const agent = await agentsApi.get(agentRow.id, agentRow.companyId);
+          const runtimeConfig = asRecord(agent.runtimeConfig) ?? {};
+          const heartbeat = asRecord(runtimeConfig.heartbeat) ?? {};
+          return agentsApi.update(
+            agentRow.id,
+            { runtimeConfig: { ...runtimeConfig, heartbeat: { ...heartbeat, enabled: false } } },
+            agentRow.companyId,
+          );
+        }),
+      );
       return companiesApi.update(companyId, { heartbeatsEnabled: false });
     },
     onMutate: async ({ companyId }) => {

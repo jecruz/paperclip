@@ -51,53 +51,27 @@ export function InstanceSettings() {
   });
 
   const toggleOrgHeartbeatsMutation = useMutation({
-    mutationFn: async ({ companyId, enabled }: { companyId: string; enabled: boolean }) => {
-      // Update org-level setting
-      await companiesApi.update(companyId, { heartbeatsEnabled: enabled });
-
-      // Cascade to all agents in this org
-      const orgAgents = agents.filter(a => a.companyId === companyId);
-      await Promise.all(
-        orgAgents.map(async (agentRow) => {
-          const agent = await agentsApi.get(agentRow.id, agentRow.companyId);
-          const runtimeConfig = asRecord(agent.runtimeConfig) ?? {};
-          const heartbeat = asRecord(runtimeConfig.heartbeat) ?? {};
-
-          // When enabling: set enabled=true and apply a default interval if none is set
-          // When disabling: just set enabled=false (keep interval config)
-          const nextHeartbeat: Record<string, unknown> = { ...heartbeat, enabled };
-          if (enabled && (heartbeat.intervalSec == null || Number(heartbeat.intervalSec) <= 0)) {
-            nextHeartbeat.intervalSec = 3600; // default 1 hour if not configured
-          }
-
-          return agentsApi.update(
-            agentRow.id,
-            { runtimeConfig: { ...runtimeConfig, heartbeat: nextHeartbeat } },
-            agentRow.companyId,
-          );
-        }),
-      );
+    mutationFn: async ({ companyId }: { companyId: string }) => {
+      return companiesApi.update(companyId, { heartbeatsEnabled: false });
     },
-    onMutate: async ({ companyId, enabled }) => {
+    onMutate: async ({ companyId }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.instance.schedulerHeartbeats });
       await queryClient.cancelQueries({ queryKey: queryKeys.companies.all });
       const previousHeartbeats = queryClient.getQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats);
       const previousCompanies = queryClient.getQueryData<unknown[]>(queryKeys.companies.all);
-      // Optimistically flip org-level flag and cascade heartbeatEnabled + intervalSec on all org agents
       queryClient.setQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats, (old = []) =>
         (old as InstanceSchedulerHeartbeatAgent[]).map(a =>
           a.companyId !== companyId ? a : {
             ...a,
-            companyHeartbeatsEnabled: enabled,
-            heartbeatEnabled: enabled,
-            intervalSec: enabled && a.intervalSec <= 0 ? 3600 : a.intervalSec,
-            schedulerActive: enabled && a.status !== "paused" && a.status !== "terminated" && a.status !== "pending_approval" && (enabled ? 3600 : a.intervalSec) > 0,
+            companyHeartbeatsEnabled: false,
+            heartbeatEnabled: false,
+            schedulerActive: false,
           },
         ),
       );
       queryClient.setQueryData<unknown[]>(queryKeys.companies.all, (old = []) =>
         (old as Array<{ id: string; heartbeatsEnabled?: boolean }>).map(c =>
-          c.id === companyId ? { ...c, heartbeatsEnabled: enabled } : c,
+          c.id === companyId ? { ...c, heartbeatsEnabled: false } : c,
         ),
       );
       return { previousHeartbeats, previousCompanies };
@@ -294,26 +268,23 @@ export function InstanceSettings() {
                   <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {group.companyName}
                   </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto h-6 px-2 text-[10px]"
-                    disabled={toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId}
-                    onClick={() => {
-                      const enabled = group.companyHeartbeatsEnabled;
-                      const noun = group.agents.length === 1 ? "agent" : "agents";
-                      if (enabled) {
+                  {group.companyHeartbeatsEnabled && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto h-6 px-2 text-[10px]"
+                      disabled={toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId}
+                      onClick={() => {
+                        const noun = group.agents.length === 1 ? "agent" : "agents";
                         if (!window.confirm(`Disable timer heartbeats for all ${group.agents.length} ${noun} in ${group.companyName}?`)) return;
-                      }
-                      toggleOrgHeartbeatsMutation.mutate({ companyId: group.companyId, enabled: !enabled });
-                    }}
-                  >
-                    {toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId
-                      ? "..."
-                      : group.companyHeartbeatsEnabled
-                        ? "Disable Org"
-                        : "Enable Org"}
-                  </Button>
+                        toggleOrgHeartbeatsMutation.mutate({ companyId: group.companyId });
+                      }}
+                    >
+                      {toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId
+                        ? "..."
+                        : "Disable Org"}
+                    </Button>
+                  )}
                 </div>
                 <div className="divide-y">
                   {group.agents.map((agent) => {

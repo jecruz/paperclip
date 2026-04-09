@@ -294,7 +294,7 @@ export function companyService(db: Db) {
 
     reset: async (id: string, confirmName: string) => {
       // Step 1: Verify company exists
-      const company = await getCompanyById(id);
+      const company = await db.select().from(companies).where(eq(companies.id, id)).then(r => r[0] ?? null);
       if (!company) {
         throw notFound("Company not found");
       }
@@ -481,7 +481,7 @@ export function companyService(db: Db) {
 
       // Step 5: Return company (still exists) and deleted counts
       // (Activity is logged by the route handler with richer actor context)
-      const updatedCompany = await getCompanyById(id);
+      const updatedCompany = await db.select().from(companies).where(eq(companies.id, id)).then(r => r[0] ?? null);
       return {
         company: updatedCompany!,
         deletedCounts,

@@ -279,8 +279,8 @@ export function companyService(db: Db) {
         await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, id));
         await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
         await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, id));
-        await tx.delete(issueComments).where(eq(issueComments.companyId, id));
         await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        await tx.delete(issueComments).where(eq(issueComments.companyId, id));
         await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
         await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
         await tx.delete(approvals).where(eq(approvals.companyId, id));
@@ -400,6 +400,8 @@ export function companyService(db: Db) {
           .where(eq(agentTaskSessions.companyId, id));
         // Delete cost_events (before heartbeat_runs — cost_events has FK to heartbeat_runs)
         await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        // Delete activity_log (before heartbeat_runs — activity_log.run_id references heartbeat_runs)
+        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
         // Delete heartbeat_runs
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
         // Delete agent_wakeup_requests
@@ -487,8 +489,6 @@ export function companyService(db: Db) {
         await tx
           .delete(agents)
           .where(and(eq(agents.companyId, id), ne(agents.role, "ceo")));
-        // Delete activity_log
-        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
       });
 
       // Step 5: Re-enable heartbeats for the fresh org (reset clears everything, so re-enable)

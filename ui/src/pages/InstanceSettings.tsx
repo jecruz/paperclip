@@ -224,11 +224,6 @@ export function InstanceSettings() {
     return [...map.values()];
   }, [agents]);
 
-  function getCompanyHeartbeatsEnabled(companyId: string): boolean {
-    const cached = (queryClient.getQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats) as InstanceSchedulerHeartbeatAgent[] | undefined)?.find(a => a.companyId === companyId);
-    if (cached) return cached.companyHeartbeatsEnabled;
-    return (companiesQuery.data ?? []).find(c => c.id === companyId)?.heartbeatsEnabled ?? true;
-  }
 
   if (heartbeatsQuery.isLoading) {
     return <div className="text-sm text-muted-foreground">Loading scheduler heartbeats...</div>;
@@ -305,7 +300,7 @@ export function InstanceSettings() {
                     className="ml-auto h-6 px-2 text-[10px]"
                     disabled={toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId}
                     onClick={() => {
-                      const enabled = getCompanyHeartbeatsEnabled(group.companyId);
+                      const enabled = group.companyHeartbeatsEnabled;
                       const noun = group.agents.length === 1 ? "agent" : "agents";
                       if (enabled) {
                         if (!window.confirm(`Disable timer heartbeats for all ${group.agents.length} ${noun} in ${group.companyName}?`)) return;
@@ -315,7 +310,7 @@ export function InstanceSettings() {
                   >
                     {toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId
                       ? "..."
-                      : getCompanyHeartbeatsEnabled(group.companyId)
+                      : group.companyHeartbeatsEnabled
                         ? "Disable Org"
                         : "Enable Org"}
                   </Button>

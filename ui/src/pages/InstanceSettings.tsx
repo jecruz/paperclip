@@ -52,23 +52,60 @@ export function InstanceSettings() {
 
   const toggleOrgHeartbeatsMutation = useMutation({
     mutationFn: async ({ companyId, enabled }: { companyId: string; enabled: boolean }) => {
-      return companiesApi.update(companyId, { heartbeatsEnabled: enabled });
+      // Update org-level setting
+      await companiesApi.update(companyId, { heartbeatsEnabled: enabled });
+
+      // Cascade to all agents in this org
+      const orgAgents = agents.filter(a => a.companyId === companyId);
+      const toUpdate = enabled
+        ? orgAgents.filter(a => !a.heartbeatEnabled)
+        : orgAgents.filter(a => a.heartbeatEnabled);
+
+      if (toUpdate.length > 0) {
+        await Promise.all(
+          toUpdate.map(async (agentRow) => {
+            const agent = await agentsApi.get(agentRow.id, agentRow.companyId);
+            const runtimeConfig = asRecord(agent.runtimeConfig) ?? {};
+            const heartbeat = asRecord(runtimeConfig.heartbeat) ?? {};
+            return agentsApi.update(
+              agentRow.id,
+              { runtimeConfig: { ...runtimeConfig, heartbeat: { ...heartbeat, enabled } } },
+              agentRow.companyId,
+            );
+          }),
+        );
+      }
     },
     onMutate: async ({ companyId, enabled }) => {
-      // Optimistically update the company in the cache so the button flips immediately
+      await queryClient.cancelQueries({ queryKey: queryKeys.instance.schedulerHeartbeats });
       await queryClient.cancelQueries({ queryKey: queryKeys.companies.all });
-      const previous = queryClient.getQueryData<unknown[]>(queryKeys.companies.all);
+      const previousHeartbeats = queryClient.getQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats);
+      const previousCompanies = queryClient.getQueryData<unknown[]>(queryKeys.companies.all);
+      // Optimistically flip org-level flag and cascade heartbeatEnabled on all org agents
+      queryClient.setQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats, (old = []) =>
+        (old as InstanceSchedulerHeartbeatAgent[]).map(a =>
+          a.companyId !== companyId ? a : {
+            ...a,
+            companyHeartbeatsEnabled: enabled,
+            heartbeatEnabled: enabled,
+            schedulerActive: enabled && a.status !== "paused" && a.status !== "terminated" && a.status !== "pending_approval" && a.intervalSec > 0,
+          },
+        ),
+      );
       queryClient.setQueryData<unknown[]>(queryKeys.companies.all, (old = []) =>
         (old as Array<{ id: string; heartbeatsEnabled?: boolean }>).map(c =>
           c.id === companyId ? { ...c, heartbeatsEnabled: enabled } : c,
         ),
       );
-      return { previous };
+      return { previousHeartbeats, previousCompanies };
     },
     onError: (error, _, context) => {
       setActionError(error instanceof Error ? error.message : "Failed to update heartbeat setting.");
-      if (context?.previous !== undefined) {
-        queryClient.setQueryData(queryKeys.companies.all, context.previous);
+      if (context?.previousHeartbeats !== undefined) {
+        queryClient.setQueryData(queryKeys.instance.schedulerHeartbeats, context.previousHeartbeats);
+      }
+      if (context?.previousCompanies !== undefined) {
+        queryClient.setQueryData(queryKeys.companies.all, context.previousCompanies);
       }
     },
     onSettled: async () => {
@@ -172,11 +209,11 @@ export function InstanceSettings() {
   const anyEnabled = enabledCount > 0;
 
   const grouped = useMemo(() => {
-    const map = new Map<string, { companyId: string; companyName: string; agents: InstanceSchedulerHeartbeatAgent[] }>();
+    const map = new Map<string, { companyId: string; companyName: string; agents: InstanceSchedulerHeartbeatAgent[]; companyHeartbeatsEnabled: boolean }>();
     for (const agent of agents) {
       let group = map.get(agent.companyId);
       if (!group) {
-        group = { companyId: agent.companyId, companyName: agent.companyName, agents: [] };
+        group = { companyId: agent.companyId, companyName: agent.companyName, agents: [], companyHeartbeatsEnabled: agent.companyHeartbeatsEnabled };
         map.set(agent.companyId, group);
       }
       group.agents.push(agent);
@@ -185,8 +222,9 @@ export function InstanceSettings() {
   }, [agents]);
 
   function getCompanyHeartbeatsEnabled(companyId: string): boolean {
-    const companies = companiesQuery.data ?? [];
-    return companies.find(c => c.id === companyId)?.heartbeatsEnabled ?? true;
+    const cached = (queryClient.getQueryData<unknown[]>(queryKeys.instance.schedulerHeartbeats) as InstanceSchedulerHeartbeatAgent[] | undefined)?.find(a => a.companyId === companyId);
+    if (cached) return cached.companyHeartbeatsEnabled;
+    return (companiesQuery.data ?? []).find(c => c.id === companyId)?.heartbeatsEnabled ?? true;
   }
 
   if (heartbeatsQuery.isLoading) {

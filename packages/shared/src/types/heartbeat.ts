@@ -129,6 +129,7 @@ export interface InstanceSchedulerHeartbeatAgent {
   companyId: string;
   companyName: string;
   companyIssuePrefix: string;
+  companyHeartbeatsEnabled: boolean;
   agentName: string;
   agentUrlKey: string;
   role: AgentRole;

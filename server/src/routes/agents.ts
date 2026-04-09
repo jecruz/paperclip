@@ -975,6 +975,7 @@ export function agentRoutes(db: Db) {
         lastHeartbeatAt: agentsTable.lastHeartbeatAt,
         companyName: companies.name,
         companyIssuePrefix: companies.issuePrefix,
+        companyHeartbeatsEnabled: companies.heartbeatsEnabled,
       })
       .from(agentsTable)
       .innerJoin(companies, eq(agentsTable.companyId, companies.id))
@@ -993,6 +994,7 @@ export function agentRoutes(db: Db) {
           companyId: row.companyId,
           companyName: row.companyName,
           companyIssuePrefix: row.companyIssuePrefix,
+          companyHeartbeatsEnabled: row.companyHeartbeatsEnabled ?? true,
           agentName: row.agentName,
           agentUrlKey: deriveAgentUrlKey(row.agentName, row.id),
           role: row.role as InstanceSchedulerHeartbeatAgent["role"],
@@ -1001,7 +1003,7 @@ export function agentRoutes(db: Db) {
           adapterType: row.adapterType,
           intervalSec: policy.intervalSec,
           heartbeatEnabled: policy.enabled,
-          schedulerActive: statusEligible && policy.enabled && policy.intervalSec > 0,
+          schedulerActive: statusEligible && (row.companyHeartbeatsEnabled ?? true) && policy.enabled && policy.intervalSec > 0,
           lastHeartbeatAt: row.lastHeartbeatAt,
         };
       })

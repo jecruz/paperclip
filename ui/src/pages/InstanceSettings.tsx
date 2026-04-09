@@ -54,15 +54,28 @@ export function InstanceSettings() {
     mutationFn: async ({ companyId, enabled }: { companyId: string; enabled: boolean }) => {
       return companiesApi.update(companyId, { heartbeatsEnabled: enabled });
     },
-    onSuccess: async () => {
-      setActionError(null);
+    onMutate: async ({ companyId, enabled }) => {
+      // Optimistically update the company in the cache so the button flips immediately
+      await queryClient.cancelQueries({ queryKey: queryKeys.companies.all });
+      const previous = queryClient.getQueryData<unknown[]>(queryKeys.companies.all);
+      queryClient.setQueryData<unknown[]>(queryKeys.companies.all, (old = []) =>
+        (old as Array<{ id: string; heartbeatsEnabled?: boolean }>).map(c =>
+          c.id === companyId ? { ...c, heartbeatsEnabled: enabled } : c,
+        ),
+      );
+      return { previous };
+    },
+    onError: (error, _, context) => {
+      setActionError(error instanceof Error ? error.message : "Failed to update heartbeat setting.");
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(queryKeys.companies.all, context.previous);
+      }
+    },
+    onSettled: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.instance.schedulerHeartbeats }),
         queryClient.invalidateQueries({ queryKey: queryKeys.companies.all }),
       ]);
-    },
-    onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to update heartbeat setting.");
     },
   });
 
@@ -159,18 +172,22 @@ export function InstanceSettings() {
   const anyEnabled = enabledCount > 0;
 
   const grouped = useMemo(() => {
-    const map = new Map<string, { companyId: string; companyName: string; agents: InstanceSchedulerHeartbeatAgent[]; heartbeatsEnabled: boolean }>();
-    const companyMap = new Map((companiesQuery.data ?? []).map(c => [c.id, c.heartbeatsEnabled ?? true]));
+    const map = new Map<string, { companyId: string; companyName: string; agents: InstanceSchedulerHeartbeatAgent[] }>();
     for (const agent of agents) {
       let group = map.get(agent.companyId);
       if (!group) {
-        group = { companyId: agent.companyId, companyName: agent.companyName, agents: [], heartbeatsEnabled: companyMap.get(agent.companyId) ?? true };
+        group = { companyId: agent.companyId, companyName: agent.companyName, agents: [] };
         map.set(agent.companyId, group);
       }
       group.agents.push(agent);
     }
     return [...map.values()];
-  }, [agents, companiesQuery.data]);
+  }, [agents]);
+
+  function getCompanyHeartbeatsEnabled(companyId: string): boolean {
+    const companies = companiesQuery.data ?? [];
+    return companies.find(c => c.id === companyId)?.heartbeatsEnabled ?? true;
+  }
 
   if (heartbeatsQuery.isLoading) {
     return <div className="text-sm text-muted-foreground">Loading scheduler heartbeats...</div>;
@@ -245,18 +262,19 @@ export function InstanceSettings() {
                     variant="outline"
                     size="sm"
                     className="ml-auto h-6 px-2 text-[10px]"
-                    disabled={toggleOrgHeartbeatsMutation.isPending}
+                    disabled={toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId}
                     onClick={() => {
+                      const enabled = getCompanyHeartbeatsEnabled(group.companyId);
                       const noun = group.agents.length === 1 ? "agent" : "agents";
-                      if (group.heartbeatsEnabled) {
+                      if (enabled) {
                         if (!window.confirm(`Disable timer heartbeats for all ${group.agents.length} ${noun} in ${group.companyName}?`)) return;
                       }
-                      toggleOrgHeartbeatsMutation.mutate({ companyId: group.companyId, enabled: !group.heartbeatsEnabled });
+                      toggleOrgHeartbeatsMutation.mutate({ companyId: group.companyId, enabled: !enabled });
                     }}
                   >
-                    {toggleOrgHeartbeatsMutation.isPending
+                    {toggleOrgHeartbeatsMutation.isPending && toggleOrgHeartbeatsMutation.variables?.companyId === group.companyId
                       ? "..."
-                      : group.heartbeatsEnabled
+                      : getCompanyHeartbeatsEnabled(group.companyId)
                         ? "Disable Org"
                         : "Enable Org"}
                   </Button>

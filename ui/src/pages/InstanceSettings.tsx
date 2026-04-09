@@ -5,6 +5,7 @@ import type { InstanceSchedulerHeartbeatAgent } from "@paperclipai/shared";
 import { Link } from "@/lib/router";
 import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
+import { companiesApi } from "../api/companies";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { EmptyState } from "../components/EmptyState";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,27 @@ export function InstanceSettings() {
     queryKey: queryKeys.instance.schedulerHeartbeats,
     queryFn: () => heartbeatsApi.listInstanceSchedulerAgents(),
     refetchInterval: 15_000,
+  });
+
+  const companiesQuery = useQuery({
+    queryKey: queryKeys.companies.all,
+    queryFn: () => companiesApi.list(),
+  });
+
+  const toggleOrgHeartbeatsMutation = useMutation({
+    mutationFn: async ({ companyId, enabled }: { companyId: string; enabled: boolean }) => {
+      return companiesApi.update(companyId, { heartbeatsEnabled: enabled });
+    },
+    onSuccess: async () => {
+      setActionError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.instance.schedulerHeartbeats }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.companies.all }),
+      ]);
+    },
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "Failed to update heartbeat setting.");
+    },
   });
 
   const toggleMutation = useMutation({
@@ -137,17 +159,18 @@ export function InstanceSettings() {
   const anyEnabled = enabledCount > 0;
 
   const grouped = useMemo(() => {
-    const map = new Map<string, { companyName: string; agents: InstanceSchedulerHeartbeatAgent[] }>();
+    const map = new Map<string, { companyId: string; companyName: string; agents: InstanceSchedulerHeartbeatAgent[]; heartbeatsEnabled: boolean }>();
+    const companyMap = new Map((companiesQuery.data ?? []).map(c => [c.id, c.heartbeatsEnabled ?? true]));
     for (const agent of agents) {
       let group = map.get(agent.companyId);
       if (!group) {
-        group = { companyName: agent.companyName, agents: [] };
+        group = { companyId: agent.companyId, companyName: agent.companyName, agents: [], heartbeatsEnabled: companyMap.get(agent.companyId) ?? true };
         map.set(agent.companyId, group);
       }
       group.agents.push(agent);
     }
     return [...map.values()];
-  }, [agents]);
+  }, [agents, companiesQuery.data]);
 
   if (heartbeatsQuery.isLoading) {
     return <div className="text-sm text-muted-foreground">Loading scheduler heartbeats...</div>;
@@ -212,10 +235,31 @@ export function InstanceSettings() {
       ) : (
         <div className="space-y-4">
           {grouped.map((group) => (
-            <Card key={group.companyName}>
+            <Card key={group.companyId}>
               <CardContent className="p-0">
-                <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {group.companyName}
+                <div className="border-b px-3 py-2 flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {group.companyName}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto h-6 px-2 text-[10px]"
+                    disabled={toggleOrgHeartbeatsMutation.isPending}
+                    onClick={() => {
+                      const noun = group.agents.length === 1 ? "agent" : "agents";
+                      if (group.heartbeatsEnabled) {
+                        if (!window.confirm(`Disable timer heartbeats for all ${group.agents.length} ${noun} in ${group.companyName}?`)) return;
+                      }
+                      toggleOrgHeartbeatsMutation.mutate({ companyId: group.companyId, enabled: !group.heartbeatsEnabled });
+                    }}
+                  >
+                    {toggleOrgHeartbeatsMutation.isPending
+                      ? "..."
+                      : group.heartbeatsEnabled
+                        ? "Disable Org"
+                        : "Enable Org"}
+                  </Button>
                 </div>
                 <div className="divide-y">
                   {group.agents.map((agent) => {

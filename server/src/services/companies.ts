@@ -1,5 +1,6 @@
 import { and, count, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
+import type { CompanyResetDeletedCounts } from "@paperclipai/shared";
 import {
   companies,
   companyLogos,
@@ -53,6 +54,7 @@ export function companyService(db: Db) {
     budgetMonthlyCents: companies.budgetMonthlyCents,
     spentMonthlyCents: companies.spentMonthlyCents,
     requireBoardApprovalForNewAgents: companies.requireBoardApprovalForNewAgents,
+    heartbeatsEnabled: companies.heartbeatsEnabled,
     feedbackDataSharingEnabled: companies.feedbackDataSharingEnabled,
     feedbackDataSharingConsentAt: companies.feedbackDataSharingConsentAt,
     feedbackDataSharingConsentByUserId: companies.feedbackDataSharingConsentByUserId,
@@ -489,7 +491,10 @@ export function companyService(db: Db) {
         await tx.delete(activityLog).where(eq(activityLog.companyId, id));
       });
 
-      // Step 5: Return company (still exists) and deleted counts
+      // Step 5: Re-enable heartbeats for the fresh org (reset clears everything, so re-enable)
+      await db.update(companies).set({ heartbeatsEnabled: true }).where(eq(companies.id, id));
+
+      // Step 6: Return company (still exists) and deleted counts
       // (Activity is logged by the route handler with richer actor context)
       const updatedCompany = await db.select().from(companies).where(eq(companies.id, id)).then(r => r[0] ?? null);
       return {

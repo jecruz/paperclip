@@ -10,6 +10,7 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  companies,
   heartbeatRunEvents,
   heartbeatRuns,
   issueComments,
@@ -4451,12 +4452,15 @@ export function heartbeatService(db: Db) {
 
     tickTimers: async (now = new Date()) => {
       const allAgents = await db.select().from(agents);
+      const allCompanies = await db.select({ id: companies.id, heartbeatsEnabled: companies.heartbeatsEnabled }).from(companies);
+      const companyHeartbeatEnabled = new Map(allCompanies.map(c => [c.id, c.heartbeatsEnabled ?? true]));
       let checked = 0;
       let enqueued = 0;
       let skipped = 0;
 
       for (const agent of allAgents) {
         if (agent.status === "paused" || agent.status === "terminated" || agent.status === "pending_approval") continue;
+        if (!companyHeartbeatEnabled.get(agent.companyId)) continue;
         const policy = parseHeartbeatPolicy(agent);
         if (!policy.enabled || policy.intervalSec <= 0) continue;
 

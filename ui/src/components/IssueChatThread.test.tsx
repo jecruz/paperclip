@@ -93,13 +93,24 @@ vi.mock("../hooks/usePaperclipIssueRuntime", () => ({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
+const _chatStorage = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  value: {
+    getItem: (key: string) => _chatStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => _chatStorage.set(key, value),
+    removeItem: (key: string) => _chatStorage.delete(key),
+    clear: () => _chatStorage.clear(),
+  },
+  configurable: true,
+});
+
 describe("IssueChatThread", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    localStorage.clear();
+    globalThis.localStorage.clear();
   });
 
   afterEach(() => {
@@ -209,7 +220,7 @@ describe("IssueChatThread", () => {
       vi.advanceTimersByTime(900);
     });
 
-    expect(localStorage.getItem("issue-chat-draft:test-1")).toBe("Draft survives refresh");
+    expect(globalThis.localStorage.getItem("issue-chat-draft:test-1")).toBe("Draft survives refresh");
 
     act(() => {
       root.unmount();

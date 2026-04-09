@@ -4047,16 +4047,33 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           warnings.push(`Missing AGENTS markdown for ${manifestAgent.slug}; imported with an empty managed bundle.`);
         }
 
-        // Apply adapter overrides from request if present
+        // Apply adapter overrides and global defaults
         const adapterOverride = input.adapterOverrides?.[planAgent.slug];
-        const effectiveAdapterType = adapterOverride?.adapterType ?? manifestAgent.adapterType;
-        const baseAdapterConfig = adapterOverride?.adapterConfig
-          ? { ...adapterOverride.adapterConfig }
-          : { ...manifestAgent.adapterConfig } as Record<string, unknown>;
+        const globalDefaults = input.defaultAgentConfig ?? {};
+        const effectiveAdapterType =
+          adapterOverride?.adapterType ??
+          globalDefaults.adapterType ??
+          manifestAgent.adapterType;
+
+        // Build effective adapter config: per-agent override > global defaults > manifest
+        const manifestAdapterConfig = manifestAgent.adapterConfig as Record<string, unknown>;
+        const overrideConfig = adapterOverride?.adapterConfig ?? {};
+        const effectiveAdapterConfig: Record<string, unknown> = {
+          ...manifestAdapterConfig,
+          // Global defaults override manifest
+          ...(globalDefaults.model !== undefined ? { model: globalDefaults.model } : {}),
+          ...(globalDefaults.command !== undefined ? { command: globalDefaults.command } : {}),
+          ...(globalDefaults.extraArgs !== undefined ? { extraArgs: globalDefaults.extraArgs } : {}),
+          ...(globalDefaults.parameters
+            ? { parameters: { ...((manifestAdapterConfig.parameters as Record<string, unknown>) ?? {}), ...globalDefaults.parameters } }
+            : {}),
+          // Per-agent override overrides everything
+          ...overrideConfig,
+        };
 
         const desiredSkills = (manifestAgent.skills ?? []).map((skillRef) => desiredSkillRefMap.get(skillRef) ?? skillRef);
         const adapterConfigWithSkills = writePaperclipSkillSyncPreference(
-          baseAdapterConfig,
+          effectiveAdapterConfig,
           desiredSkills,
         );
         delete adapterConfigWithSkills.promptTemplate;
@@ -4065,6 +4082,18 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         delete adapterConfigWithSkills.instructionsBundleMode;
         delete adapterConfigWithSkills.instructionsRootPath;
         delete adapterConfigWithSkills.instructionsEntryFile;
+
+        // Apply runtime config: per-agent override > global defaults > manifest
+        const manifestRuntimeConfig = (manifestAgent.runtimeConfig ?? {}) as Record<string, unknown>;
+        const overrideRuntimeConfig = (overrideConfig.runtimeConfig ?? {}) as Record<string, unknown>;
+        const effectiveRuntimeConfig: Record<string, unknown> = {
+          ...manifestRuntimeConfig,
+          ...(globalDefaults.maxTurnsPerRun !== undefined ? { maxTurnsPerRun: globalDefaults.maxTurnsPerRun } : {}),
+          ...(globalDefaults.heartbeatEnabled !== undefined ? { heartbeatEnabled: globalDefaults.heartbeatEnabled } : {}),
+          ...(globalDefaults.intervalSec !== undefined ? { intervalSec: globalDefaults.intervalSec } : {}),
+          ...overrideRuntimeConfig,
+        };
+
         const patch = {
           name: planAgent.plannedName,
           role: manifestAgent.role,
@@ -4074,7 +4103,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           reportsTo: null,
           adapterType: effectiveAdapterType,
           adapterConfig: adapterConfigWithSkills,
-          runtimeConfig: disableImportedTimerHeartbeat(manifestAgent.runtimeConfig),
+          runtimeConfig: disableImportedTimerHeartbeat(effectiveRuntimeConfig),
           budgetMonthlyCents: manifestAgent.budgetMonthlyCents,
           permissions: manifestAgent.permissions,
           metadata: manifestAgent.metadata,

@@ -119,6 +119,17 @@ vi.mock("@/components/ui/dropdown-menu", async () => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
+const _docStorage = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  value: {
+    getItem: (key: string) => _docStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => _docStorage.set(key, value),
+    removeItem: (key: string) => _docStorage.delete(key),
+    clear: () => _docStorage.clear(),
+  },
+  configurable: true,
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((res) => {
@@ -221,7 +232,7 @@ describe("IssueDocumentsSection", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
-    window.localStorage.clear();
+    globalThis.localStorage.clear();
     vi.clearAllMocks();
     markdownEditorMockState.emitMountEmptyChange = false;
   });

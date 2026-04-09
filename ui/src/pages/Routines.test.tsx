@@ -210,6 +210,17 @@ vi.mock("../components/AgentIconPicker", () => ({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
+const _routineStorage = new Map<string, string>();
+Object.defineProperty(globalThis, "localStorage", {
+  value: {
+    getItem: (key: string) => _routineStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => _routineStorage.set(key, value),
+    removeItem: (key: string) => _routineStorage.delete(key),
+    clear: () => _routineStorage.clear(),
+  },
+  configurable: true,
+});
+
 function createRoutine(overrides: Partial<RoutineListItem>): RoutineListItem {
   return {
     id: "routine-1",
@@ -304,7 +315,7 @@ describe("Routines page", () => {
     routinesListMock.mockReset();
     issuesListMock.mockReset();
     issuesListRenderMock.mockClear();
-    localStorage.clear();
+    globalThis.localStorage.clear();
   });
 
   afterEach(() => {

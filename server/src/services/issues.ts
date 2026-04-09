@@ -1562,12 +1562,13 @@ export function issueService(db: Db) {
         actorAgentId?: string | null;
         actorUserId?: string | null;
       },
+      dbOrTx: any = db,
     ) => {
-      const existing = await db
+      const existing = await dbOrTx
         .select()
         .from(issues)
         .where(eq(issues.id, id))
-        .then((rows) => rows[0] ?? null);
+        .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
       if (!existing) return null;
 
       const {
@@ -1631,15 +1632,23 @@ export function issueService(db: Db) {
       }
       if (issueData.status && issueData.status !== "in_progress") {
         patch.checkoutRunId = null;
+        // Fix B: also clear the execution lock when leaving in_progress
+        patch.executionRunId = null;
+        patch.executionAgentNameKey = null;
+        patch.executionLockedAt = null;
       }
       if (
         (issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== existing.assigneeAgentId) ||
         (issueData.assigneeUserId !== undefined && issueData.assigneeUserId !== existing.assigneeUserId)
       ) {
         patch.checkoutRunId = null;
+        // Fix B: clear execution lock on reassignment, matching checkoutRunId clear
+        patch.executionRunId = null;
+        patch.executionAgentNameKey = null;
+        patch.executionLockedAt = null;
       }
 
-      return db.transaction(async (tx) => {
+      const runUpdate = async (tx: any) => {
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, existing.companyId);
         const [currentProjectGoalId, nextProjectGoalId] = await Promise.all([
           getProjectDefaultGoalId(tx, existing.companyId, existing.projectId),
@@ -1663,7 +1672,7 @@ export function issueService(db: Db) {
           .set(patch)
           .where(eq(issues.id, id))
           .returning()
-          .then((rows) => rows[0] ?? null);
+          .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!updated) return null;
         if (nextLabelIds !== undefined) {
           await syncIssueLabels(updated.id, existing.companyId, nextLabelIds, tx);
@@ -1682,7 +1691,9 @@ export function issueService(db: Db) {
         }
         const [enriched] = await withIssueLabels(tx, [updated]);
         return enriched;
-      });
+      };
+
+      return dbOrTx === db ? db.transaction(runUpdate) : runUpdate(dbOrTx);
     },
 
     remove: (id: string) =>
@@ -1729,6 +1740,40 @@ export function issueService(db: Db) {
       await assertAssignableAgent(issueCompany.companyId, agentId);
 
       const now = new Date();
+
+      // Fix C: staleness detection — if executionRunId references a run that is no
+      // longer queued or running, clear it before applying the execution lock condition
+      // so a dead lock can't produce a spurious 409.
+      // Wrapped in a transaction with SELECT FOR UPDATE to make the read + clear atomic,
+      // matching the existing pattern in enqueueWakeup().
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select id from issues where id = ${id} for update`,
+        );
+        const preCheckRow = await tx
+          .select({ executionRunId: issues.executionRunId })
+          .from(issues)
+          .where(eq(issues.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!preCheckRow?.executionRunId) return;
+        const lockRun = await tx
+          .select({ id: heartbeatRuns.id, status: heartbeatRuns.status })
+          .from(heartbeatRuns)
+          .where(eq(heartbeatRuns.id, preCheckRow.executionRunId))
+          .then((rows) => rows[0] ?? null);
+        if (!lockRun || (lockRun.status !== "queued" && lockRun.status !== "running")) {
+          await tx
+            .update(issues)
+            .set({ executionRunId: null, executionAgentNameKey: null, executionLockedAt: null, updatedAt: now })
+            .where(
+              and(
+                eq(issues.id, id),
+                eq(issues.executionRunId, preCheckRow.executionRunId),
+              ),
+            );
+        }
+      });
+
       const sameRunAssigneeCondition = checkoutRunId
         ? and(
           eq(issues.assigneeAgentId, agentId),

@@ -27,6 +27,15 @@ import {
   principalPermissionGrants,
   companyMemberships,
   companySkills,
+  routines,
+  routineRuns,
+  routineTriggers,
+  budgetPolicies,
+  budgetIncidents,
+  documents,
+  documentRevisions,
+  feedbackVotes,
+  feedbackExports,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
 

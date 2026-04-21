@@ -43,7 +43,7 @@ const localStorageMock = {
 Object.defineProperty(window, "localStorage", { value: localStorageMock, writable: true });
 
 vi.mock("../context/ToastContext", () => ({
-  useToast: () => ({ pushToast: vi.fn() }),
+  useToastActions: () => ({ pushToast: vi.fn() }),
 }));
 
 vi.mock("../api/routines", () => ({

@@ -26,7 +26,7 @@ import {
   logActivity,
 } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
-import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo } from "./authz.js";
 
 export function companyRoutes(db: Db, storage?: StorageService) {
   const router = Router();
@@ -49,6 +49,17 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       throw badRequest(`Invalid ${field} query value`);
     }
     return parsed;
+  }
+
+  function assertImportTargetAccess(
+    req: Request,
+    target: { mode: "new_company" } | { mode: "existing_company"; companyId: string },
+  ) {
+    if (target.mode === "new_company") {
+      assertInstanceAdmin(req);
+      return;
+    }
+    assertCompanyAccess(req, target.companyId);
   }
 
   async function assertCanUpdateBranding(req: Request, companyId: string) {
@@ -182,7 +193,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     validate(companyPortabilityExportSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
-      assertCompanyAccess(req, companyId);
+      await assertCanManagePortability(req, companyId, "exports");
       const result = await portability.exportBundle(companyId, req.body);
       res.json(result);
     },
@@ -193,9 +204,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     validate(companyPortabilityPreviewSchema),
     async (req, res) => {
       assertBoard(req);
-      if (req.body.target.mode === "existing_company") {
-        assertCompanyAccess(req, req.body.target.companyId);
-      }
+      assertImportTargetAccess(req, req.body.target);
       const preview = await portability.previewImport(req.body);
       res.json(preview);
     },
@@ -206,9 +215,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     validate(companyPortabilityImportSchema),
     async (req, res) => {
       assertBoard(req);
-      if (req.body.target.mode === "existing_company") {
-        assertCompanyAccess(req, req.body.target.companyId);
-      }
+      assertImportTargetAccess(req, req.body.target);
       const actor = getActorInfo(req);
       const result = await portability.importBundle(
         req.body,

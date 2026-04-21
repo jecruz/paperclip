@@ -11,6 +11,8 @@ interface InlineEditorProps {
   placeholder?: string;
   multiline?: boolean;
   imageUploadHandler?: (file: File) => Promise<string>;
+  /** Called when a non-image file is dropped onto the editor. */
+  onDropFile?: (file: File) => Promise<void>;
   mentions?: MentionOption[];
   nullable?: boolean;
 }
@@ -46,11 +48,13 @@ export function InlineEditor({
   multiline = false,
   nullable = false,
   imageUploadHandler,
+  onDropFile,
   mentions,
 }: InlineEditorProps) {
   const [editing, setEditing] = useState(false);
   const [multilineFocused, setMultilineFocused] = useState(false);
   const [draft, setDraft] = useState(value);
+  const lastPropValueRef = useRef(value);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const markdownRef = useRef<MarkdownEditorRef>(null);
   const autosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,8 +67,14 @@ export function InlineEditor({
   } = useAutosaveIndicator();
 
   useEffect(() => {
-    if (multiline && multilineFocused) return;
-    setDraft(value);
+    const previousValue = lastPropValueRef.current;
+    lastPropValueRef.current = value;
+    setDraft((currentDraft) => {
+      if (multiline && multilineFocused && currentDraft !== previousValue) {
+        return currentDraft;
+      }
+      return value;
+    });
   }, [value, multiline, multilineFocused]);
 
   useEffect(() => {
@@ -228,6 +238,7 @@ export function InlineEditor({
           className="bg-transparent"
           contentClassName={cn("paperclip-edit-in-place-content", className)}
           imageUploadHandler={imageUploadHandler}
+          onDropFile={onDropFile}
           mentions={mentions}
           onSubmit={() => {
             finalizeMultilineBlurOrSubmit();

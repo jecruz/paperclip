@@ -17,6 +17,7 @@ import {
   heartbeatRunEvents,
   costEvents,
   financeEvents,
+  issueReadStates,
   approvalComments,
   approvals,
   activityLog,
@@ -91,10 +92,10 @@ export function companyService(db: Db) {
     if (companyIds.length === 0) return new Map<string, number>();
     const { start, end } = currentUtcMonthWindow();
     const rows = await database
-      .select({
-        companyId: costEvents.companyId,
-        spentMonthlyCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
-      })
+        .select({
+          companyId: costEvents.companyId,
+          spentMonthlyCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::double precision`,
+        })
       .from(costEvents)
       .where(
         and(
@@ -299,7 +300,7 @@ export function companyService(db: Db) {
 
     remove: (id: string, confirmName: string) =>
       db.transaction(async (tx) => {
-        // Step 1: Verify company exists and name matches
+        // Verify company exists and name matches
         {
           const [company] = await tx
             .select({ name: companies.name })
@@ -314,13 +315,14 @@ export function companyService(db: Db) {
           }
         }
 
-        // Step 2: Delete from child tables in dependency order
+        // Delete from child tables in dependency order
         await tx
           .delete(heartbeatRunEvents)
           .where(eq(heartbeatRunEvents.companyId, id));
         await tx
           .delete(agentTaskSessions)
           .where(eq(agentTaskSessions.companyId, id));
+        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
         await tx
           .delete(agentWakeupRequests)
@@ -339,12 +341,10 @@ export function companyService(db: Db) {
         await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));
         await tx.delete(joinRequests).where(eq(joinRequests.companyId, id));
         await tx.delete(invites).where(eq(invites.companyId, id));
-        await tx
-          .delete(principalPermissionGrants)
-          .where(eq(principalPermissionGrants.companyId, id));
-        await tx
-          .delete(companyMemberships)
-          .where(eq(companyMemberships.companyId, id));
+        await tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, id));
+        await tx.delete(companyMemberships).where(eq(companyMemberships.companyId, id));
+        await tx.delete(companySkills).where(eq(companySkills.companyId, id));
+        await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
         await tx.delete(issues).where(eq(issues.companyId, id));
         await tx.delete(companySkills).where(eq(companySkills.companyId, id));
         await tx.delete(labels).where(eq(labels.companyId, id));
@@ -370,7 +370,6 @@ export function companyService(db: Db) {
         await tx.delete(goals).where(eq(goals.companyId, id));
         await tx.delete(projects).where(eq(projects.companyId, id));
         await tx.delete(agents).where(eq(agents.companyId, id));
-        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
         const rows = await tx
           .delete(companies)
           .where(eq(companies.id, id))

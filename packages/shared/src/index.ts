@@ -423,6 +423,7 @@ export type {
   CompanyPortabilityPreviewIssuePlan,
   CompanyPortabilityPreviewResult,
   CompanyPortabilityAdapterOverride,
+  CompanyPortabilityDefaultAgentConfig,
   CompanyPortabilityImportRequest,
   CompanyPortabilityImportResult,
   CompanyPortabilityExportRequest,

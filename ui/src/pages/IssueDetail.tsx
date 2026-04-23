@@ -71,6 +71,7 @@ import { IssueProperties } from "../components/IssueProperties";
 import { IssueRunLedger } from "../components/IssueRunLedger";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import { PhaseOutputCard } from "../components/PhaseOutputCard";
+import { PhaseOutputModal } from "../components/PhaseOutputModal";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
 import { ScrollToBottom } from "../components/ScrollToBottom";
@@ -973,6 +974,7 @@ export function IssueDetail() {
   } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [phaseOutputModalOpen, setPhaseOutputModalOpen] = useState(false);
   const [attachmentDragActive, setAttachmentDragActive] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -2986,24 +2988,35 @@ export function IssueDetail() {
 
         <TabsContent value="phase-outputs">
           {detailTab === "phase-outputs" ? (
-            issue.phaseOutputs && issue.phaseOutputs.length > 0 ? (
-              <div className="space-y-4">
-                {issue.phaseOutputs.map((phaseOutput) => (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-medium">Phase Outputs</h2>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPhaseOutputModalOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add
+                </Button>
+              </div>
+              {issue.phaseOutputs && issue.phaseOutputs.length > 0 ? (
+                issue.phaseOutputs.map((phaseOutput) => (
                   <PhaseOutputCard
                     key={phaseOutput.phase}
                     phaseOutput={phaseOutput}
                   />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Layers className="h-10 w-10 text-muted-foreground/50" />
-                <p className="mt-3 text-sm font-medium text-muted-foreground">No phase outputs yet</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Pipeline phase outputs will appear here as they are generated.
-                </p>
-              </div>
-            )
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Layers className="h-10 w-10 text-muted-foreground/50" />
+                  <p className="mt-3 text-sm font-medium text-muted-foreground">No phase outputs yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Pipeline phase outputs will appear here as they are generated.
+                  </p>
+                </div>
+              )}
+            </div>
           ) : null}
         </TabsContent>
 
@@ -3043,6 +3056,12 @@ export function IssueDetail() {
         </SheetContent>
       </Sheet>
       <ScrollToBottom />
+
+      <PhaseOutputModal
+        issueId={issue.id}
+        open={phaseOutputModalOpen}
+        onOpenChange={setPhaseOutputModalOpen}
+      />
     </div>
   );
 }

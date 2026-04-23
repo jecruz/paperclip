@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import type { PhaseOutput, PhaseOutputContent, PhaseOutputStatus } from "@paperclipai/shared";
 
-const PHASE_LABELS: Record<string, string> = {
+export const PHASE_LABELS: Record<string, string> = {
   product_plan: "Product Plan",
   tech_plan: "Tech Plan",
   code_review: "Code Review",

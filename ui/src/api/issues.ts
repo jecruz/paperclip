@@ -12,6 +12,9 @@ import type {
   IssueLabel,
   IssueThreadInteraction,
   IssueWorkProduct,
+  PhaseOutput,
+  PhaseOutputContent,
+  PhaseOutputStatus,
   UpsertIssueDocument,
 } from "@paperclipai/shared";
 import { api } from "./client";
@@ -191,4 +194,16 @@ export const issuesApi = {
   updateWorkProduct: (id: string, data: Record<string, unknown>) =>
     api.patch<IssueWorkProduct>(`/work-products/${id}`, data),
   deleteWorkProduct: (id: string) => api.delete<IssueWorkProduct>(`/work-products/${id}`),
+  updatePhaseOutput: (
+    issueId: string,
+    phase: string,
+    updates: {
+      status?: PhaseOutputStatus;
+      content?: PhaseOutputContent;
+      approvedAt?: string;
+      approvedByAgentId?: string;
+      approvedByUserId?: string;
+    },
+  ) =>
+    api.patch<PhaseOutput>(`/issues/${issueId}/phase-outputs/${encodeURIComponent(phase)}`, updates),
 };

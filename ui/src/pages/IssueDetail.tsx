@@ -70,6 +70,7 @@ import { IssueRelatedWorkPanel } from "../components/IssueRelatedWorkPanel";
 import { IssueProperties } from "../components/IssueProperties";
 import { IssueRunLedger } from "../components/IssueRunLedger";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
+import { PhaseOutputCard } from "../components/PhaseOutputCard";
 import type { MentionOption } from "../components/MarkdownEditor";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
 import { ScrollToBottom } from "../components/ScrollToBottom";
@@ -98,6 +99,7 @@ import {
   Copy,
   EyeOff,
   Hexagon,
+  Layers,
   ListTree,
   MessageSquare,
   MoreHorizontal,
@@ -2904,6 +2906,10 @@ export function IssueDetail() {
             <ListTree className="h-3.5 w-3.5" />
             Related work
           </TabsTrigger>
+          <TabsTrigger value="phase-outputs" className="gap-1.5">
+            <Layers className="h-3.5 w-3.5" />
+            Phase outputs
+          </TabsTrigger>
           {issuePluginTabItems.map((item) => (
             <TabsTrigger key={item.value} value={item.value}>
               {item.label}
@@ -2976,6 +2982,29 @@ export function IssueDetail() {
 
         <TabsContent value="related-work">
           <IssueRelatedWorkPanel relatedWork={issue.relatedWork} />
+        </TabsContent>
+
+        <TabsContent value="phase-outputs">
+          {detailTab === "phase-outputs" ? (
+            issue.phaseOutputs && issue.phaseOutputs.length > 0 ? (
+              <div className="space-y-4">
+                {issue.phaseOutputs.map((phaseOutput) => (
+                  <PhaseOutputCard
+                    key={phaseOutput.phase}
+                    phaseOutput={phaseOutput}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Layers className="h-10 w-10 text-muted-foreground/50" />
+                <p className="mt-3 text-sm font-medium text-muted-foreground">No phase outputs yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Pipeline phase outputs will appear here as they are generated.
+                </p>
+              </div>
+            )
+          ) : null}
         </TabsContent>
 
         {activePluginTab && (

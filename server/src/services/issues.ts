@@ -23,7 +23,7 @@ import {
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
-import type { IssueRelationIssueSummary } from "@paperclipai/shared";
+import type { IssueRelationIssueSummary, PhaseOutputStatus, PhaseOutputContent } from "@paperclipai/shared";
 import { extractAgentMentionIds, extractProjectMentionIds, isUuidLike } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
@@ -726,6 +726,7 @@ const issueListSelect = {
   executionWorkspaceId: issues.executionWorkspaceId,
   executionWorkspacePreference: issues.executionWorkspacePreference,
   executionWorkspaceSettings: sql<null>`null`,
+  phaseOutputs: issues.phaseOutputs,
   startedAt: issues.startedAt,
   completedAt: issues.completedAt,
   cancelledAt: issues.cancelledAt,
@@ -3024,6 +3025,108 @@ export function issueService(db: Db) {
         project: a.projectId ? projectMap.get(a.projectId) ?? null : null,
         goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
       }));
+    },
+
+    updatePhaseOutput: async (
+      issueId: string,
+      phase: string,
+      updates: {
+        status?: PhaseOutputStatus;
+        content?: PhaseOutputContent;
+        approvedAt?: string;
+        approvedByAgentId?: string;
+        approvedByUserId?: string;
+      },
+    ) => {
+      const issue = await db
+        .select({ phaseOutputs: issues.phaseOutputs })
+        .from(issues)
+        .where(eq(issues.id, issueId))
+        .then((rows) => rows[0] ?? null);
+      if (!issue) throw notFound("Issue not found");
+
+      const currentOutputs = (issue.phaseOutputs ?? []) as Array<{
+        phase: string;
+        status: PhaseOutputStatus;
+        agentId: string | null;
+        content: PhaseOutputContent;
+        createdAt: string | null;
+        updatedAt: string | null;
+        approvedAt: string | null;
+        approvedByAgentId: string | null;
+        approvedByUserId: string | null;
+      }>;
+
+      const existingIndex = currentOutputs.findIndex((p) => p.phase === phase);
+      const now = new Date().toISOString();
+
+      if (existingIndex >= 0) {
+        const existing = currentOutputs[existingIndex];
+
+        if (updates.status) {
+          const validTransitions: Record<PhaseOutputStatus, PhaseOutputStatus[]> = {
+            draft: ["in_review"],
+            in_review: ["approved", "rejected", "draft"],
+            approved: ["draft"],
+            rejected: ["draft", "in_review"],
+          };
+          if (!validTransitions[existing.status]?.includes(updates.status)) {
+            throw unprocessable(
+              `Invalid status transition from '${existing.status}' to '${updates.status}'`,
+            );
+          }
+        }
+
+        if (updates.content !== undefined && existing.status !== "draft") {
+          throw unprocessable("Content can only be updated when status is 'draft'");
+        }
+
+        currentOutputs[existingIndex] = {
+          ...existing,
+          ...(updates.status && { status: updates.status }),
+          ...(updates.content !== undefined && { content: updates.content }),
+          ...(updates.approvedAt !== undefined && { approvedAt: updates.approvedAt }),
+          ...(updates.approvedByAgentId !== undefined && { approvedByAgentId: updates.approvedByAgentId }),
+          ...(updates.approvedByUserId !== undefined && { approvedByUserId: updates.approvedByUserId }),
+          updatedAt: now,
+        };
+      } else {
+        if (!updates.content) {
+          throw unprocessable("Content is required when creating a new phase output");
+        }
+        currentOutputs.push({
+          phase,
+          status: updates.status ?? "draft",
+          agentId: null,
+          content: updates.content,
+          createdAt: now,
+          updatedAt: now,
+          approvedAt: updates.approvedAt ?? null,
+          approvedByAgentId: updates.approvedByAgentId ?? null,
+          approvedByUserId: updates.approvedByUserId ?? null,
+        });
+      }
+
+      const updated = await db
+        .update(issues)
+        .set({ phaseOutputs: currentOutputs, updatedAt: new Date() })
+        .where(eq(issues.id, issueId))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+
+      const outputs = (updated?.phaseOutputs ?? []) as Array<{
+        phase: string;
+        status: PhaseOutputStatus;
+        agentId: string | null;
+        content: PhaseOutputContent;
+        createdAt: string | null;
+        updatedAt: string | null;
+        approvedAt: string | null;
+        approvedByAgentId: string | null;
+        approvedByUserId: string | null;
+      }>;
+
+      return outputs.find((p) => p.phase === phase) ?? null;
     },
   };
 }

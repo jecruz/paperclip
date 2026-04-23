@@ -2463,6 +2463,35 @@ export function issueRoutes(
     res.json(issue);
   });
 
+  router.patch("/issues/:id/phase-outputs/:phase", async (req, res) => {
+    const id = req.params.id as string;
+    const phase = req.params.phase as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
+
+    const { status, content, approvedAt, approvedByAgentId, approvedByUserId } = req.body ?? {};
+
+    const updated = await svc.updatePhaseOutput(id, phase, {
+      ...(status !== undefined && { status }),
+      ...(content !== undefined && { content }),
+      ...(approvedAt !== undefined && { approvedAt }),
+      ...(approvedByAgentId !== undefined && { approvedByAgentId }),
+      ...(approvedByUserId !== undefined && { approvedByUserId }),
+    });
+
+    if (!updated) {
+      res.status(404).json({ error: "Phase output not found" });
+      return;
+    }
+
+    res.json(updated);
+  });
+
   router.post("/issues/:id/checkout", validate(checkoutIssueSchema), async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);

@@ -25,6 +25,14 @@ import {
   type BaseClientOptions,
 } from "./common.js";
 import {
+  portabilityIncludeSchema,
+  portabilityCollisionStrategySchema,
+  companyPortabilityExportSchema,
+  companyPortabilityPreviewSchema,
+  portabilitySourceSchema,
+  portabilityTargetSchema,
+} from "@paperclipai/shared";
+import {
   buildFeedbackTraceQuery,
   normalizeFeedbackTraceExportFormat,
   serializeFeedbackTraces,
@@ -147,6 +155,175 @@ function portableFileEntryToWriteValue(entry: CompanyPortabilityFileEntry): stri
 
 function isUuidLike(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+export interface ValidateExportOptions {
+  include?: string;
+  skills?: string;
+  projects?: string;
+  issues?: string;
+  projectIssues?: string;
+}
+
+export interface ValidateImportSourceOptions {
+  from: string;
+  ref?: string;
+  isPath: boolean;
+}
+
+export interface ValidateImportOptions {
+  include?: string;
+  agents?: string;
+  target?: string;
+  companyId?: string;
+  newCompanyName?: string;
+  collision?: string;
+}
+
+export function validateExportOptions(opts: ValidateExportOptions): void {
+  const issues: string[] = [];
+
+  // Validate --include tokens first (existence of keys)
+  if (opts.include !== undefined && opts.include !== null) {
+    assertIncludeTokensValid(opts.include);
+    const parseResult = portabilityIncludeSchema.safeParse(parseIncludeValues(opts.include));
+    if (!parseResult.success) {
+      issues.push(`--include: ${parseResult.error.issues[0]?.message ?? "invalid value"}`);
+    }
+  }
+
+  // Validate --skills as comma-separated strings
+  if (opts.skills !== undefined && opts.skills !== null) {
+    if (opts.skills.trim() === "") {
+      issues.push("--skills: cannot be empty");
+    } else {
+      const parts = opts.skills.split(",").map((p) => p.trim()).filter(Boolean);
+      for (const part of parts) {
+        if (!part) {
+          issues.push("--skills: cannot contain empty segments");
+          break;
+        }
+      }
+    }
+  }
+
+  // Validate --projects as comma-separated strings
+  if (opts.projects !== undefined && opts.projects !== null) {
+    if (opts.projects.trim() === "") {
+      issues.push("--projects: cannot be empty");
+    }
+  }
+
+  // Validate --issues as comma-separated strings
+  if (opts.issues !== undefined && opts.issues !== null) {
+    if (opts.issues.trim() === "") {
+      issues.push("--issues: cannot be empty");
+    }
+  }
+
+  // Validate --project-issues as comma-separated strings
+  if (opts.projectIssues !== undefined && opts.projectIssues !== null) {
+    if (opts.projectIssues.trim() === "") {
+      issues.push("--project-issues: cannot be empty");
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new Error(issues.join("\n"));
+  }
+}
+
+export function validateImportSource(opts: ValidateImportSourceOptions): void {
+  const issues: string[] = [];
+
+  // Validate source URL/path
+  if (!opts.from?.trim()) {
+    issues.push("source path or URL is required");
+  }
+
+  // Validate ref for non-GitHub sources
+  if (opts.ref?.trim() && !opts.isPath) {
+    if (!looksLikeRepoUrl(opts.from) && !isGithubShorthand(opts.from)) {
+      issues.push("--ref is only supported for GitHub import sources");
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new Error(issues.join("\n"));
+  }
+}
+
+export function validateImportOptions(opts: ValidateImportOptions): void {
+  const issues: string[] = [];
+
+  // Validate --include tokens first (existence of keys)
+  if (opts.include !== undefined && opts.include !== null) {
+    assertIncludeTokensValid(opts.include);
+    const parseResult = portabilityIncludeSchema.safeParse(parseIncludeValues(opts.include));
+    if (!parseResult.success) {
+      issues.push(`--include: ${parseResult.error.issues[0]?.message ?? "invalid value"}`);
+    }
+  }
+
+  // Validate --target
+  if (opts.target !== undefined && opts.target !== null) {
+    const targetValue = opts.target.toLowerCase();
+    if (!["new", "existing"].includes(targetValue)) {
+      issues.push("--target: must be 'new' or 'existing'");
+    }
+  }
+
+  // Validate --collision
+  if (opts.collision !== undefined && opts.collision !== null) {
+    const parseResult = portabilityCollisionStrategySchema.safeParse(opts.collision.toLowerCase());
+    if (!parseResult.success) {
+      issues.push("--collision: must be 'rename', 'skip', or 'replace'");
+    }
+  }
+
+  // Validate --company-id format when target is existing
+  if (opts.target?.toLowerCase() === "existing" && opts.companyId?.trim()) {
+    if (!isUuidLike(opts.companyId.trim())) {
+      issues.push("--company-id: must be a valid UUID");
+    }
+  }
+
+  // Validate --new-company-name when target is new
+  if (opts.target?.toLowerCase() === "new" && opts.newCompanyName?.trim() === "") {
+    issues.push("--new-company-name: cannot be empty when specified");
+  }
+
+  // Validate --agents
+  if (opts.agents !== undefined && opts.agents !== null && opts.agents.trim() === "") {
+    issues.push("--agents: cannot be empty");
+  }
+
+  if (issues.length > 0) {
+    throw new Error(issues.join("\n"));
+  }
+}
+
+function parseIncludeValues(input: string): Record<string, boolean> {
+  const values = input.split(",").map((part) => part.trim().toLowerCase()).filter(Boolean);
+  return {
+    company: values.includes("company"),
+    agents: values.includes("agents"),
+    projects: values.includes("projects"),
+    issues: values.includes("issues") || values.includes("tasks"),
+    skills: values.includes("skills"),
+  };
+}
+
+const VALID_INCLUDE_KEYS = new Set(["company", "agents", "projects", "issues", "tasks", "skills"]);
+
+function assertIncludeTokensValid(input: string | undefined | null): void {
+  if (!input) return;
+  const parts = input.split(",").map((p) => p.trim().toLowerCase()).filter(Boolean);
+  for (const part of parts) {
+    if (!VALID_INCLUDE_KEYS.has(part)) {
+      throw new Error(`Invalid --include value. Use one or more of: company,agents,projects,issues,tasks,skills`);
+    }
+  }
 }
 
 function normalizeSelector(input: string): string {
@@ -1224,6 +1401,13 @@ export function registerCompanyCommands(program: Command): void {
       .action(async (companyId: string, opts: CompanyExportOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
+          validateExportOptions({
+            include: opts.include,
+            skills: opts.skills,
+            projects: opts.projects,
+            issues: opts.issues,
+            projectIssues: opts.projectIssues,
+          });
           const include = parseInclude(opts.include);
           const exported = await ctx.api.post<CompanyPortabilityExportResult>(
             `/api/companies/${companyId}/export`,
@@ -1286,9 +1470,17 @@ export function registerCompanyCommands(program: Command): void {
           const ctx = resolveCommandContext(opts);
           const interactiveView = isInteractiveTerminal() && !ctx.json;
           const from = fromPathOrUrl.trim();
-          if (!from) {
-            throw new Error("Source path or URL is required.");
-          }
+
+          validateImportOptions({
+            include: opts.include,
+            agents: opts.agents,
+            target: opts.target,
+            companyId: opts.companyId,
+            newCompanyName: opts.newCompanyName,
+            collision: opts.collision,
+          });
+
+          validateImportSource({ from, ref: opts.ref, isPath: false });
 
           const include = resolveImportInclude(opts.include);
           const agents = parseAgents(opts.agents);

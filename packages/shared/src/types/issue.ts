@@ -246,6 +246,7 @@ export interface Issue {
   goal?: Goal | null;
   currentExecutionWorkspace?: ExecutionWorkspace | null;
   workProducts?: IssueWorkProduct[];
+  phaseOutputs?: PhaseOutput[];
   mentionedProjects?: Project[];
   myLastTouchAt?: Date | null;
   lastExternalCommentAt?: Date | null;
@@ -457,4 +458,35 @@ export interface IssueAttachment {
   createdAt: Date;
   updatedAt: Date;
   contentPath: string;
+}
+
+// =============================================================================
+// Phase Outputs — multi-agent pipeline artifacts (CEO→CTO→Staff→Release→QA)
+// =============================================================================
+
+export type PhaseKind =
+  | "product_plan"
+  | "tech_plan"
+  | "code_review"
+  | "ship_report"
+  | "qa_report"
+  | string;
+
+export type PhaseOutputStatus = "draft" | "in_review" | "approved" | "rejected";
+
+export type PhaseOutputContent =
+  | { kind: "json"; data: Record<string, unknown> }
+  | { kind: "markdown"; text: string }
+  | { kind: "text"; text: string };
+
+export interface PhaseOutput {
+  phase: string;
+  status: PhaseOutputStatus;
+  agentId: string | null;
+  content: PhaseOutputContent;
+  createdAt: string | null;
+  updatedAt: string | null;
+  approvedAt: string | null;
+  approvedByAgentId: string | null;
+  approvedByUserId: string | null;
 }

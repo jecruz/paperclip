@@ -123,6 +123,7 @@ import {
   type IssueAttachment,
   type IssueComment,
   type IssueThreadInteraction,
+  type PhaseOutputStatus,
   type RequestConfirmationInteraction,
   type SuggestTasksInteraction,
 } from "@paperclipai/shared";
@@ -1391,6 +1392,21 @@ export function IssueDetail() {
   const handleIssuePropertiesUpdate = useCallback((data: Record<string, unknown>) => {
     updateIssue.mutate(data);
   }, [updateIssue.mutate]);
+
+  const updatePhaseOutputStatus = useMutation({
+    mutationFn: ({ phase, status }: { phase: string; status: PhaseOutputStatus }) =>
+      issuesApi.updatePhaseOutput(issueId!, phase, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Update failed",
+        body: err instanceof Error ? err.message : "Unable to update phase output",
+        tone: "error",
+      });
+    },
+  });
 
   const updateChildIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
@@ -3005,6 +3021,16 @@ export function IssueDetail() {
                   <PhaseOutputCard
                     key={phaseOutput.phase}
                     phaseOutput={phaseOutput}
+                    onSubmitForReview={() =>
+                      updatePhaseOutputStatus.mutate({ phase: phaseOutput.phase, status: "in_review" })
+                    }
+                    onApprove={() =>
+                      updatePhaseOutputStatus.mutate({ phase: phaseOutput.phase, status: "approved" })
+                    }
+                    onReject={() =>
+                      updatePhaseOutputStatus.mutate({ phase: phaseOutput.phase, status: "rejected" })
+                    }
+                    isUpdating={updatePhaseOutputStatus.isPending}
                   />
                 ))
               ) : (

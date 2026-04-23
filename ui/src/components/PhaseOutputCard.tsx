@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { CheckCircle2, XCircle, Clock, FileJson, FileText, File } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, FileJson, FileText, File, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -69,12 +69,14 @@ export const PhaseOutputCard = memo(function PhaseOutputCard({
   onSubmitForReview,
   onApprove,
   onReject,
+  onEdit,
   isUpdating = false,
 }: {
   phaseOutput: PhaseOutput;
   onSubmitForReview?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
+  onEdit?: () => void;
   isUpdating?: boolean;
 }) {
   const phaseLabel = PHASE_LABELS[phaseOutput.phase] ?? phaseOutput.phase;
@@ -133,6 +135,17 @@ export const PhaseOutputCard = memo(function PhaseOutputCard({
       {(canEdit || canReview) && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
           <div className="flex flex-wrap items-center gap-2">
+            {canEdit && onEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onEdit}
+                disabled={isUpdating}
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Button>
+            )}
             {canEdit && onSubmitForReview && (
               <Button
                 size="sm"

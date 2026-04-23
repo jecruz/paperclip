@@ -123,6 +123,7 @@ import {
   type IssueAttachment,
   type IssueComment,
   type IssueThreadInteraction,
+  type PhaseOutput,
   type PhaseOutputStatus,
   type RequestConfirmationInteraction,
   type SuggestTasksInteraction,
@@ -976,6 +977,7 @@ export function IssueDetail() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [phaseOutputModalOpen, setPhaseOutputModalOpen] = useState(false);
+  const [editingPhaseOutput, setEditingPhaseOutput] = useState<PhaseOutput | null>(null);
   const [attachmentDragActive, setAttachmentDragActive] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -3030,6 +3032,10 @@ export function IssueDetail() {
                     onReject={() =>
                       updatePhaseOutputStatus.mutate({ phase: phaseOutput.phase, status: "rejected" })
                     }
+                    onEdit={() => {
+                      setEditingPhaseOutput(phaseOutput);
+                      setPhaseOutputModalOpen(true);
+                    }}
                     isUpdating={updatePhaseOutputStatus.isPending}
                   />
                 ))
@@ -3086,7 +3092,11 @@ export function IssueDetail() {
       <PhaseOutputModal
         issueId={issue.id}
         open={phaseOutputModalOpen}
-        onOpenChange={setPhaseOutputModalOpen}
+        onOpenChange={(open) => {
+          setPhaseOutputModalOpen(open);
+          if (!open) setEditingPhaseOutput(null);
+        }}
+        initialData={editingPhaseOutput ?? undefined}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   Dialog,
@@ -19,7 +19,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { issuesApi } from "@/api/issues";
 import { PHASE_LABELS } from "./PhaseOutputCard";
-import type { PhaseOutputStatus, PhaseOutputContent } from "@paperclipai/shared";
+import type { PhaseOutput, PhaseOutputStatus, PhaseOutputContent } from "@paperclipai/shared";
 
 const CONTENT_KIND_OPTIONS = [
   { value: "markdown", label: "Markdown" },
@@ -32,27 +32,43 @@ export function PhaseOutputModal({
   open,
   onOpenChange,
   onSuccess,
+  initialData,
 }: {
   issueId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialData?: PhaseOutput;
 }) {
-  const [phase, setPhase] = useState<string>("product_plan");
+  const isEditMode = !!initialData;
+  const wasOpenRef = useRef(false);
+
+  const [phase, setPhase] = useState("product_plan");
   const [contentKind, setContentKind] = useState<"markdown" | "text" | "json">("markdown");
   const [contentText, setContentText] = useState("");
   const [jsonText, setJsonText] = useState("{\n  \n}");
   const [jsonError, setJsonError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) {
+    if (!wasOpenRef.current && open && initialData) {
+      setPhase(initialData.phase);
+      setContentKind(initialData.content.kind);
+      if (initialData.content.kind === "json") {
+        setJsonText(JSON.stringify(initialData.content.data, null, 2));
+        setContentText("");
+      } else {
+        setContentText(initialData.content.text);
+        setJsonText("{\n  \n}");
+      }
+    } else if (wasOpenRef.current && !open) {
       setContentText("");
       setJsonText("{\n  \n}");
       setPhase("product_plan");
       setContentKind("markdown");
       setJsonError(null);
     }
-  }, [open]);
+    wasOpenRef.current = open;
+  }, [open, initialData]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -61,7 +77,7 @@ export function PhaseOutputModal({
           ? { kind: "json", data: JSON.parse(jsonText) as Record<string, unknown> }
           : { kind: contentKind, text: contentText };
 
-      return issuesApi.updatePhaseOutput(issueId, phase, { content, status: "draft" });
+      return issuesApi.updatePhaseOutput(issueId, phase, { content });
     },
     onSuccess: () => {
       onOpenChange(false);
@@ -76,7 +92,7 @@ export function PhaseOutputModal({
       try {
         JSON.parse(jsonText);
         setJsonError(null);
-      } catch (err) {
+      } catch {
         setJsonError("Invalid JSON syntax");
         return;
       }
@@ -89,13 +105,13 @@ export function PhaseOutputModal({
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Add Phase Output</DialogTitle>
+            <DialogTitle>{isEditMode ? "Edit Phase Output" : "Add Phase Output"}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="phase">Phase</Label>
-              <Select value={phase} onValueChange={setPhase}>
+              <Select value={phase} onValueChange={setPhase} disabled={isEditMode}>
                 <SelectTrigger id="phase">
                   <SelectValue />
                 </SelectTrigger>
@@ -183,7 +199,7 @@ export function PhaseOutputModal({
                 (contentKind !== "json" && !contentText.trim())
               }
             >
-              {mutation.isPending ? "Creating..." : "Create"}
+              {mutation.isPending ? "Saving..." : isEditMode ? "Save" : "Create"}
             </Button>
           </DialogFooter>
         </form>

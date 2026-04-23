@@ -3037,8 +3037,9 @@ export function issueService(db: Db) {
         approvedByAgentId?: string;
         approvedByUserId?: string;
       },
+      existingPhaseOutputs?: { phaseOutputs: Record<string, unknown>[] | null } | null,
     ) => {
-      const issue = await db
+      const issue = existingPhaseOutputs ?? await db
         .select({ phaseOutputs: issues.phaseOutputs })
         .from(issues)
         .where(eq(issues.id, issueId))
@@ -3114,7 +3115,9 @@ export function issueService(db: Db) {
         .returning()
         .then((rows) => rows[0] ?? null);
 
-      const outputs = (updated?.phaseOutputs ?? []) as Array<{
+      if (!updated) return null;
+
+      const outputList = updated.phaseOutputs as Array<{
         phase: string;
         status: PhaseOutputStatus;
         agentId: string | null;
@@ -3124,9 +3127,9 @@ export function issueService(db: Db) {
         approvedAt: string | null;
         approvedByAgentId: string | null;
         approvedByUserId: string | null;
-      }>;
+      }> | null;
 
-      return outputs.find((p) => p.phase === phase) ?? null;
+      return outputList?.find((p) => p.phase === phase) ?? null;
     },
   };
 }

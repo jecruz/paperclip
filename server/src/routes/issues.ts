@@ -2482,7 +2482,7 @@ export function issueRoutes(
       ...(approvedAt !== undefined && { approvedAt }),
       ...(approvedByAgentId !== undefined && { approvedByAgentId }),
       ...(approvedByUserId !== undefined && { approvedByUserId }),
-    });
+    }, { phaseOutputs: existing.phaseOutputs });
 
     if (!updated) {
       res.status(404).json({ error: "Phase output not found" });

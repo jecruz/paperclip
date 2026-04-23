@@ -56,7 +56,7 @@ function ContentPreview({ content }: { content: PhaseOutputContent }) {
       </div>
     );
   }
-  const text = content.kind === "markdown" ? content.text : content.text;
+  const text = content.text;
   return (
     <p className="text-xs text-muted-foreground line-clamp-3">
       {text.slice(0, 200)}{text.length > 200 ? "..." : ""}

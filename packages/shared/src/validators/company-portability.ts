@@ -129,6 +129,22 @@ export const portabilityIssueRoutineManifestEntrySchema = z.object({
   triggers: z.array(portabilityIssueRoutineTriggerManifestEntrySchema).default([]),
 });
 
+export const portabilityPhaseOutputSchema = z.object({
+  phase: z.string().min(1),
+  status: z.enum(["draft", "in_review", "approved", "rejected"]),
+  agentId: z.string().nullable(),
+  content: z.union([
+    z.object({ kind: z.literal("json"), data: z.record(z.unknown()) }),
+    z.object({ kind: z.literal("markdown"), text: z.string() }),
+    z.object({ kind: z.literal("text"), text: z.string() }),
+  ]),
+  createdAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  approvedAt: z.string().nullable(),
+  approvedByAgentId: z.string().nullable(),
+  approvedByUserId: z.string().nullable(),
+});
+
 export const portabilityIssueManifestEntrySchema = z.object({
   slug: z.string().min(1),
   identifier: z.string().min(1).nullable(),
@@ -147,6 +163,7 @@ export const portabilityIssueManifestEntrySchema = z.object({
   billingCode: z.string().nullable(),
   executionWorkspaceSettings: z.record(z.unknown()).nullable(),
   assigneeAdapterOverrides: z.record(z.unknown()).nullable(),
+  phaseOutputs: z.array(portabilityPhaseOutputSchema).default([]),
   metadata: z.record(z.unknown()).nullable(),
 });
 

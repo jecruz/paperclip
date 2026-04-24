@@ -1,4 +1,5 @@
 import type { AgentEnvConfig } from "./secrets.js";
+import type { PhaseOutput } from "./issue.js";
 import type { RoutineVariable } from "./routine.js";
 
 export interface CompanyPortabilityInclude {
@@ -111,6 +112,7 @@ export interface CompanyPortabilityIssueManifestEntry {
   billingCode: string | null;
   executionWorkspaceSettings: Record<string, unknown> | null;
   assigneeAdapterOverrides: Record<string, unknown> | null;
+  phaseOutputs: PhaseOutput[];
   metadata: Record<string, unknown> | null;
 }
 

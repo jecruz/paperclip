@@ -25,6 +25,7 @@ import type {
   CompanyPortabilityIssueRoutineTriggerManifestEntry,
   CompanyPortabilityIssueManifestEntry,
   CompanyPortabilitySidebarOrder,
+  PhaseOutput,
   CompanyPortabilitySkillManifestEntry,
   CompanySkill,
   AgentEnvConfig,
@@ -2657,6 +2658,12 @@ function buildManifestFromPackageFiles(
       asBoolean(frontmatter.recurring) === true
       || routineExtension !== null
       || legacyRecurrence !== null;
+    const extensionPhaseOutputs = Array.isArray((extension as any).phaseOutputs)
+      ? (extension as any).phaseOutputs.filter(
+          (p: any): p is Record<string, unknown> =>
+            typeof p === "object" && p !== null && "phase" in p && "status" in p,
+        )
+      : [];
     manifest.issues.push({
       slug,
       identifier: asString(extension.identifier),
@@ -2681,6 +2688,7 @@ function buildManifestFromPackageFiles(
       assigneeAdapterOverrides: isPlainRecord(extension.assigneeAdapterOverrides)
         ? extension.assigneeAdapterOverrides
         : null,
+      phaseOutputs: extensionPhaseOutputs,
       metadata: isPlainRecord(extension.metadata) ? extension.metadata : null,
     });
     if (frontmatter.kind && frontmatter.kind !== "task") {
@@ -3401,6 +3409,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         projectWorkspaceKey: projectWorkspaceKey ?? undefined,
         executionWorkspaceSettings: issue.executionWorkspaceSettings ?? undefined,
         assigneeAdapterOverrides: issue.assigneeAdapterOverrides ?? undefined,
+        phaseOutputs: (issue.phaseOutputs as any) ?? undefined,
       });
       paperclipTasksOut[taskSlug] = isPlainRecord(extension) ? extension : {};
     }
@@ -4097,6 +4106,16 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     for (const existing of existingProjects) {
       existingProjectSlugToId.set(existing.urlKey, existing.id);
     }
+    const existingIssues = await issues.list(targetCompany.id, { limit: 10000 });
+    const existingIssueByIdentifier = new Map<string, { id: string; phaseOutputs: any }>();
+    for (const existing of existingIssues) {
+      if (existing.identifier) {
+        existingIssueByIdentifier.set(existing.identifier, {
+          id: existing.id,
+          phaseOutputs: (existing as any).phaseOutputs ?? null,
+        });
+      }
+    }
 
     const importedSkills = include.skills || include.agents
       ? await companySkills.importPackageFiles(targetCompany.id, pickTextFiles(plan.source.files), {
@@ -4487,12 +4506,42 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           }
           continue;
         }
+        const manifestIdentifier = manifestIssue.identifier;
+        const existingIssue = manifestIdentifier
+          ? existingIssueByIdentifier.get(manifestIdentifier) ?? null
+          : null;
+        if (existingIssue && manifestIssue.phaseOutputs.length > 0) {
+          const existingPhaseOutputs = existingIssue.phaseOutputs ?? [];
+          const manifestPhaseOutputsJson = JSON.stringify(manifestIssue.phaseOutputs);
+          const existingPhaseOutputsJson = JSON.stringify(existingPhaseOutputs);
+          if (manifestPhaseOutputsJson !== existingPhaseOutputsJson) {
+            warnings.push(
+              `Task ${manifestIssue.slug} has phase outputs that differ from the existing version in the target company. ` +
+              `Import would overwrite local changes. Skipping phase outputs for this task. ` +
+              `To preserve the imported phase outputs, remove the existing task first or export the current state.`,
+            );
+          }
+        }
         let issueStatus = manifestIssue.status && ISSUE_STATUSES.includes(manifestIssue.status as any)
           ? manifestIssue.status as typeof ISSUE_STATUSES[number]
           : "backlog";
         if (!assigneeAgentId && issueStatus === "in_progress") {
           warnings.push(`Task ${manifestIssue.slug} was downgraded to todo because its assignee could not be imported as assignable work.`);
           issueStatus = "todo";
+        }
+        let phaseOutputsForCreate: PhaseOutput[] = manifestIssue.phaseOutputs;
+        if (phaseOutputsForCreate.length === 0 && !existingIssue) {
+          phaseOutputsForCreate = [{
+            phase: "product_plan",
+            status: "draft",
+            agentId: assigneeAgentId,
+            content: { kind: "json", data: {} },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            approvedAt: null,
+            approvedByAgentId: null,
+            approvedByUserId: null,
+          }];
         }
         await issues.create(targetCompany.id, {
           projectId,
@@ -4508,6 +4557,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           assigneeAdapterOverrides: manifestIssue.assigneeAdapterOverrides,
           executionWorkspaceSettings: manifestIssue.executionWorkspaceSettings,
           labelIds: manifestIssue.labelIds ?? [],
+          phaseOutputs: phaseOutputsForCreate as unknown as Record<string, unknown>[],
         });
       }
     }
